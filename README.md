@@ -57,6 +57,49 @@ A Python script to compute Italian cryptocurrency taxes for 2025 by connecting t
    KRAKEN_API_SECRET=your_api_secret_here
    ```
 
+### API Key Encryption
+
+The script uses a local encryption system to secure your API credentials:
+
+1. **Secret Key Generation**: On first run, the script generates a `secret.key` file using Fernet encryption
+2. **API Key Encryption**: Your API keys are encrypted using this secret key before being stored
+3. **Environment Variables**: Store the encrypted versions of your API keys in the `.env` file
+
+#### Setup Process:
+
+1. **Generate the secret key** (run once):
+   ```python
+   from kraken import generate_key
+   generate_key()
+   ```
+
+2. **Encrypt your API keys**:
+   ```python
+   from kraken import encrypt_message
+   
+   # Encrypt your actual API key and secret
+   encrypted_key = encrypt_message("your_actual_api_key")
+   encrypted_secret = encrypt_message("your_actual_api_secret")
+   
+   print(f"KRAKEN_API_KEY={encrypted_key}")
+   print(f"KRAKEN_API_SECRET={encrypted_secret}")
+   ```
+
+3. **Add encrypted values to `.env`**:
+   ```
+   KRAKEN_API_KEY=gAAAAABk...  # Your encrypted API key
+   KRAKEN_API_SECRET=gAAAAABk...  # Your encrypted API secret
+   ```
+
+#### Security Features:
+
+- **Local Encryption**: The `secret.key` file is stored locally and should never be shared
+- **Fernet Encryption**: Uses industry-standard symmetric encryption
+- **Automatic Decryption**: The script automatically decrypts keys when needed
+- **No Plain Text Storage**: API credentials are never stored in plain text
+
+⚠️ **Important**: Keep your `secret.key` file secure and never commit it to version control!
+
 ### Environment Variables
 
 | Variable | Description | Default |
@@ -163,6 +206,9 @@ If you encounter issues:
 - 🔒 **Keep your API credentials secure**
 - 📱 **Use API keys with minimal required permissions**
 - 🗑️ **Delete API keys if compromised**
+- 🔐 **Protect your `secret.key` file** - this is used to decrypt your API credentials
+- 🚫 **Never share your `secret.key` file** - it contains the encryption key for your API credentials
+- 📁 **Add `secret.key` to your `.gitignore`** to prevent accidental commits
 
 ## Legal Disclaimer
 
