@@ -1,0 +1,7 @@
+krakenex
+pykrakenapi
+pandas
+python-dotenv
+requests
+cryptography
+numpy
