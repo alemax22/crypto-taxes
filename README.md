@@ -6,11 +6,11 @@ A Python script to compute Italian cryptocurrency taxes for 2025 by connecting t
 
 - 🔗 **Kraken API Integration**: Automatically downloads all trading transactions
 - 🧮 **Italian Tax Compliance**: Implements 2025 Italian crypto tax regulations
-- 📊 **FIFO Method**: Uses First-In-First-Out method for cost basis calculations
-- 💰 **€2000 Exemption**: Applies the Italian crypto gains exemption threshold
-- 📈 **Holding Period Analysis**: Distinguishes between short-term (≤12 months) and long-term gains
-- 📁 **CSV Export**: Saves detailed tax reports and transaction data
-- 🎯 **26% Tax Rate**: Applies the correct Italian crypto tax rate for 2025
+- 📊 **LIFO Method**: Uses Last-In-First-Out method for cost basis calculations
+- 💰 **26% Tax Rate**: Applies the correct Italian crypto tax rate for 2025
+- 📁 **Parquet Storage**: Efficiently stores transaction data in Parquet format
+- 🔄 **Incremental Updates**: Only downloads new transactions since last run
+- 🎯 **Asset Normalization**: Handles Kraken's asset naming conventions
 
 ## Prerequisites
 
@@ -63,8 +63,6 @@ A Python script to compute Italian cryptocurrency taxes for 2025 by connecting t
 |----------|-------------|---------|
 | `KRAKEN_API_KEY` | Your Kraken API key | Required |
 | `KRAKEN_API_SECRET` | Your Kraken API secret | Required |
-| `TAX_YEAR` | Tax year for calculations | 2025 |
-| `EXEMPTION_THRESHOLD` | Exemption threshold in EUR | 2000 |
 
 ## Usage
 
@@ -79,87 +77,57 @@ python main.py
 ### What the Script Does
 
 1. **Connects to Kraken API** using your credentials
-2. **Downloads all transactions** from the past 2 years
-3. **Filters transactions** for the 2025 tax year
-4. **Calculates capital gains/losses** using FIFO method
-5. **Applies Italian tax rules**:
-   - €2000 exemption threshold
-   - 26% tax rate on crypto gains
-   - Holding period analysis
-6. **Displays results** in a formatted report
-7. **Saves data** to CSV files for record keeping
+2. **Downloads transaction history** starting from 2021-01-01
+3. **Stores data efficiently** in Parquet format for fast access
+4. **Performs incremental updates** by only downloading new transactions
+5. **Normalizes asset names** to handle Kraken's naming conventions
+6. **Processes trades** by separating buy and sell transactions
+7. **Calculates capital gains/losses** using LIFO method
+8. **Applies Italian tax rules** with 26% tax rate
+9. **Displays results** showing gains by year and total taxes due
 
-### Output Files
+### Data Storage
 
-The script generates two CSV files with timestamps:
-
-- `tax_results_YYYYMMDD_HHMMSS.csv`: Complete tax calculation results
-- `transactions_YYYYMMDD_HHMMSS.csv`: All downloaded transactions
+The script uses efficient Parquet storage:
+- `kraken_ledger.parquet`: Stores all downloaded transaction data
+- Data is automatically updated with new transactions on each run
 
 ## Italian Tax Rules 2025
 
 ### Crypto Taxation Overview
 
 - **Tax Rate**: 26% on cryptocurrency capital gains
-- **Exemption**: €2000 per year (no tax on gains up to this amount)
-- **Holding Period**: No distinction between short-term and long-term gains in 2025
-- **Method**: FIFO (First-In-First-Out) for cost basis calculation
+- **Method**: LIFO (Last-In-First-Out) for cost basis calculation
+- **Scope**: All crypto-to-fiat and crypto-to-crypto trades
 
 ### What's Taxable
 
 - ✅ Capital gains from selling cryptocurrencies
 - ✅ Trading profits
 - ✅ Crypto-to-crypto exchanges
-- ✅ Mining rewards (if applicable)
+- ✅ All gains regardless of holding period
 
 ### What's Not Taxable
 
 - ❌ Purchases of cryptocurrencies
 - ❌ Transfers between your own wallets
-- ❌ Gains below €2000 threshold
 
 ## Example Output
 
 ```
-🇮🇹 Italian Crypto Tax Calculator for 2025
-==================================================
-✅ Kraken API connection established
-
-📥 Downloading transaction history...
-📅 Fetching transactions from 2023-01-01 to present...
-📊 Processed 1,247 transactions:
-   - Trades: 892
-   - Ledger entries: 355
-✅ Downloaded 1,247 transactions
-
-🧮 Calculating Italian crypto taxes...
-🔍 Analyzing transactions for tax year 2025...
-📅 Found 156 transactions for tax year 2025
-✅ Tax calculation completed
-
-==================================================
-📊 ITALIAN CRYPTO TAX RESULTS FOR 2025
-==================================================
-
-💰 Total Capital Gains: €8,450.00
-📈 Total Capital Losses: €1,200.00
-⚖️  Net Capital Gains: €7,250.00
-
-💸 Taxable Amount: €5,250.00
-🏛️  Total Tax Due: €1,365.00
-
-📋 Tax Breakdown:
-   26% on crypto gains: €1,365.00
-
-📅 Holding Period Analysis:
-   Short-term gains (≤12 months): €4,800.00
-   Long-term gains (>12 months): €2,450.00
-
-💾 Results saved to:
-   - tax_results_20250115_143022.csv
-   - transactions_20250115_143022.csv
-
-🎉 Tax calculation process completed successfully!
+Total number of transactions: 1247
+['spend', 'receive', 'trade', 'staking', 'transfer']
+pair_name XBTEUR pair_altname XXBTZEUR
+pair_name ETHEUR pair_altname XETHZEUR
+...
+(892, 5)
+                    gain    taxes
+year                            
+2021   -1234.56  -321.00
+2022    5678.90  1476.51
+2023    8901.23  2314.32
+2024   12345.67  3209.87
+2025    2345.67   609.87
 ```
 
 ## Troubleshooting
@@ -172,8 +140,8 @@ The script generates two CSV files with timestamps:
    - Ensure your Kraken account is active
 
 2. **No Transactions Found**
-   - The script only processes transactions from the specified tax year
-   - Check if you have trading activity in 2025
+   - The script processes transactions from 2021 onwards
+   - Check if you have trading activity in the specified period
    - Verify your API key has "Query Open Orders & Trades" permission
 
 3. **Import Errors**
