@@ -145,14 +145,66 @@ def main():
     # Calculate year-end balances before simulating taxes
     kraken.calculate_year_end_balances(ledger_df, OHLC_df, reference_asset, exception_assets)
 
-    ledger_out_df3, gains_final_df = kraken.simulate_taxes(ledger_df_trade_final, None)
-    gains_final_df = gains_final_df.groupby(['year','asset']).sum()
+    ledger_out_df3, gains_final_df = kraken.compute_taxes(ledger_df_trade_final)
+    
+    # Display detailed gains information with initial and final values
+    print("\n" + "="*100)
+    print("DETAILED GAINS ANALYSIS")
+    print("="*100)
+    
+    if not gains_final_df.empty:
+        print(f"{'Year':<6} {'Asset':<10} {'Initial Value (EUR)':<20} {'Final Value (EUR)':<20} {'Gain/Loss (EUR)':<20} {'Verification':<15}")
+        print("-" * 100)
+        
+        for _, row in gains_final_df.iterrows():
+            year = row['year']
+            asset = row['asset']
+            initial_value = row['initial_purchase_value']
+            final_value = row['final_sale_value']
+            gain = row['gain']
+            
+            # Verify the calculation
+            calculated_gain = final_value - initial_value
+            verification = "✓ OK" if abs(gain - calculated_gain) < Decimal('0.01') else "✗ ERROR"
+            
+            print(f"{year:<6} {asset:<10} {float(initial_value):<20.2f} {float(final_value):<20.2f} {float(gain):<20.2f} {verification:<15}")
+    
+    # Group by year and asset for tax calculation
+    gains_by_year_asset = gains_final_df.groupby(['year','asset']).sum()
+    
+    # Group by year only for final tax summary
+    gains_by_year = gains_final_df.groupby(['year']).sum()
 
-    gains_final_df = gains_final_df.groupby(['year']).sum()
-
-    #Taxes
-    gains_final_df["taxes"] = (gains_final_df["gain"])*Decimal(0.26)
-    print(gains_final_df.head(20))
+    #Taxes with 2024 franchigia (deductible threshold)
+    # Apply franchigia for 2024, normal tax calculation for other years
+    gains_by_year["taxes"] = gains_by_year.apply(
+        lambda row: kraken.calculate_taxes_with_franchigia(row["gain"], row.name) if row.name == 2024 
+        else row["gain"] * Decimal(0.26), 
+        axis=1
+    )
+    
+    print("\n" + "="*80)
+    print("TAX SUMMARY BY YEAR")
+    print("="*80)
+    print("Tax calculation with 2024 franchigia (2000 EUR deductible threshold):")
+    
+    # Reset index to make year a column and remove the aggregated asset column
+    gains_by_year_display = gains_by_year.reset_index()
+    gains_by_year_display = gains_by_year_display.drop(columns=['asset'], errors='ignore')
+    
+    # Format all numeric columns to 2 decimal places
+    for col in gains_by_year_display.columns:
+        if col != 'year' and gains_by_year_display[col].dtype in ['float64', 'object']:
+            gains_by_year_display[col] = gains_by_year_display[col].apply(
+                lambda x: f"{float(x):.2f}" if pd.notna(x) else "0.00"
+            )
+    
+    # Set pandas display options to show all columns
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    
+    print(gains_by_year_display.to_string(index=False))
 
 if __name__ == "__main__":
     main() 

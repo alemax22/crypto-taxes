@@ -254,20 +254,29 @@ def normalize_assets_name(df, asset_column_name, log_message=False):
     return df
 
 # INPUT: Ledger with trades (without sells), and simulation_df
-# OUTPUT: Ledger with remaining trades, dict with gains
+# OUTPUT: Ledger with remaining trades, dict with gains, initial purchase values, and final sale values
 def get_ledger_after_tax_computation(input_ledger_df, input_quantity_to_sell_df):
     
     ledger_out_df = input_ledger_df.copy()
     ledger_out_df = ledger_out_df.reset_index()
     ledger_out_df["isvalid"] = True
     output_gains = {}
+    output_initial_values = {}
+    output_final_values = {}
+    
     for asset, input_row in input_quantity_to_sell_df.iterrows():
         remaining_quantity_to_be_sold = input_row["quantity"]
         gain = Decimal(0)
+        initial_purchase_value = Decimal(0)
+        final_sale_value = Decimal(0)
         tax_year = input_row["datetime"].year
-        # Initialize dictionary
+        
+        # Initialize dictionaries
         if output_gains.get((tax_year,asset)) is None:
             output_gains[(tax_year,asset)] = Decimal(0)
+            output_initial_values[(tax_year,asset)] = Decimal(0)
+            output_final_values[(tax_year,asset)] = Decimal(0)
+        
         # Compute gains with LIFO strategy
         if remaining_quantity_to_be_sold > 0:
             # Filter ledger to only include transactions before the sell datetime
@@ -287,6 +296,8 @@ def get_ledger_after_tax_computation(input_ledger_df, input_quantity_to_sell_df)
                         output_total = ledger_row["quantity"] * input_row["price"]
                         original_cost = ledger_row["total"]
                         gain = gain + output_total - original_cost
+                        initial_purchase_value = initial_purchase_value + original_cost
+                        final_sale_value = final_sale_value + output_total
                         remaining_quantity_to_be_sold = remaining_quantity_to_be_sold - ledger_row["quantity"]
                         ledger_out_df.at[index,"isvalid"] = False
                      # Update the quantity in the row
@@ -295,6 +306,8 @@ def get_ledger_after_tax_computation(input_ledger_df, input_quantity_to_sell_df)
                         output_total = remaining_quantity_to_be_sold * input_row["price"]
                         original_cost = remaining_quantity_to_be_sold * ledger_row["price"]
                         gain = gain + output_total - original_cost
+                        initial_purchase_value = initial_purchase_value + original_cost
+                        final_sale_value = final_sale_value + output_total
                         # Update ledger quantity
                         ledger_out_df.at[index,"quantity"] = remaining_quantity
                         # Update ledger total
@@ -302,36 +315,49 @@ def get_ledger_after_tax_computation(input_ledger_df, input_quantity_to_sell_df)
                         remaining_quantity_to_be_sold = 0
             # Remove rows already used
             ledger_out_df = ledger_out_df[ledger_out_df["isvalid"]].copy()
+        
         # Save results
         output_gains[(tax_year,asset)] = output_gains[(tax_year,asset)] + gain
+        output_initial_values[(tax_year,asset)] = output_initial_values[(tax_year,asset)] + initial_purchase_value
+        output_final_values[(tax_year,asset)] = output_final_values[(tax_year,asset)] + final_sale_value
     
     # Output results
     ledger_out_df = ledger_out_df.copy()
-    gains_df=pd.DataFrame.from_dict(output_gains, orient='index', columns=["gain"])
-    gains_df.index = pd.MultiIndex.from_tuples(gains_df.index, names=['year', 'asset'])
-    gains_df.reset_index(inplace=True)
+    
+    # Create DataFrame with all the information
+    results_data = []
+    for key in output_gains.keys():
+        year, asset = key
+        gain = output_gains[key]
+        initial_value = output_initial_values[key]
+        final_value = output_final_values[key]
+        
+        # Verify that the calculation is correct
+        calculated_gain = final_value - initial_value
+        if abs(gain - calculated_gain) > Decimal('0.01'):  # Allow for small rounding differences
+            print(f"WARNING: Gain calculation mismatch for {asset} in {year}:")
+            print(f"  Calculated gain: {calculated_gain}")
+            print(f"  Accumulated gain: {gain}")
+            print(f"  Final value: {final_value}")
+            print(f"  Initial value: {initial_value}")
+        
+        results_data.append({
+            'year': year,
+            'asset': asset,
+            'gain': gain,
+            'initial_purchase_value': initial_value,
+            'final_sale_value': final_value
+        })
+    
+    gains_df = pd.DataFrame(results_data)
     
     return ledger_out_df, gains_df
 
-# INPUT: Ledger with all trades, and df with assets to be sold (if not passed we return the taxes for the trades already done)
+# INPUT: Ledger with all trades
 # OUTPUT: Ledger with remaining trades, dict with gains
-def simulate_taxes(input_ledger_df, input_quantity_to_sell_df=None):
+def compute_taxes(input_ledger_df):
     
     input_ledger_sim_df = input_ledger_df.copy()
-    
-    # Insert simulated buys into the ledger
-    if input_quantity_to_sell_df is not None:
-        # Prepare it to be added into the ledger 
-        simulated_ledger_df = input_quantity_to_sell_df[input_quantity_to_sell_df["quantity"]>0].copy()
-        simulated_ledger_df = simulated_ledger_df.reset_index(names=['cryptocur'])
-        simulated_ledger_df["quantity"] = simulated_ledger_df["quantity"]*-1
-        simulated_ledger_df["date"] = simulated_ledger_df['datetime'].dt.normalize()
-        simulated_ledger_df["refid"] = "SIM-" + simulated_ledger_df.index.to_series().apply(lambda x: f"{x:010}")
-        simulated_ledger_df = simulated_ledger_df.set_index("refid")
-        
-        # Pre-append them to the ledger
-        input_ledger_sim_df = pd.concat([simulated_ledger_df, input_ledger_sim_df], ignore_index=False)
-        input_ledger_sim_df.sort_values(by=['datetime'], ascending=False, inplace=True)
     
     # Get all the sell transactions
     input_quantity_already_sold_df = input_ledger_sim_df[input_ledger_sim_df["quantity"]<0].copy()
@@ -645,6 +671,26 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
         return combined_df[['price']]
     else:
         return combined_df
+
+def calculate_taxes_with_franchigia(gain, year):
+    """
+    Calculate taxes considering the 2024 franchigia of 2000 EUR.
+    Only gains/losses exceeding 2000 EUR in absolute value are taxable.
+    """
+    gain_abs = abs(gain)
+    if gain_abs <= 2000:
+        # If absolute gain/loss is 2000 EUR or less, no taxes
+        return Decimal(0)
+    else:
+        # If absolute gain/loss exceeds 2000 EUR, tax only the excess
+        if gain > 0:
+            # Positive gain: tax the amount exceeding 2000 EUR
+            taxable_amount = gain - 2000
+        else:
+            # Negative gain (loss): tax the amount exceeding 2000 EUR (but this would be negative)
+            taxable_amount = gain + 2000
+        
+        return taxable_amount * Decimal(0.26)
 
 if __name__ == "__main__":
     # Call the get_ohlc_data_with_persistence function with the assets in the portfolio
