@@ -133,7 +133,158 @@ python main.py
 
 The script uses efficient Parquet storage:
 - `kraken_ledger.parquet`: Stores all downloaded transaction data
+- `kraken_ohlc.parquet`: Stores OHLC (Open/High/Low/Close) price data
 - Data is automatically updated with new transactions on each run
+
+## Historical Data Integration
+
+### Overview
+
+The script can integrate historical OHLC data from external sources with live data from Kraken's API. This is particularly useful for:
+
+- **Faster initial setup**: Avoid downloading years of historical data via API
+- **Complete historical coverage**: Use external datasets for comprehensive historical analysis
+- **Efficient incremental updates**: Only fetch new data since the last historical record
+
+### Official Kraken Historical Data
+
+Kraken provides official historical OHLC data that can be downloaded from their website:
+
+**📊 Kraken Historical Data Portal**: [Kraken historical data](https://support.kraken.com/articles/360047124832-downloadable-historical-ohlcvt-open-high-low-close-volume-trades-data)
+
+#### Available Data:
+- **Timeframes**: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
+- **Format**: CSV files with OHLCV data
+- **Coverage**: Historical data going back several years
+- **Update Frequency**: Daily updates for recent data
+
+### Setting Up Historical Data Integration
+
+#### 1. Create Historical Data Folder
+
+Create a folder named `kraken_historical_ohlc_data` in your project directory:
+
+```bash
+mkdir kraken_historical_ohlc_data
+```
+
+#### 2. Download Historical Data
+
+1. **Visit the Kraken Historical Data Portal**: [Kraken historical data](https://support.kraken.com/articles/360047124832-downloadable-historical-ohlcvt-open-high-low-close-volume-trades-data)
+
+2. **Download the zip file**: Download the Complete Data zip file, extract it.
+
+
+#### 3. Prepare CSV Files
+
+The script expects CSV files with the following format:
+
+**File Naming Convention**: `{PAIRNAME}_1440.csv`
+- Example: `XBTEUR_1440.csv`, `XETHEUR_1440.csv`, `XRPEUR_1440.csv`
+
+**CSV Format** (no headers, comma-separated):
+```csv
+1234567890,45000,45100,44900,45050,100,50
+1234654290,45050,45200,45000,45150,120,60
+1234740690,45150,45300,45100,45250,110,55
+```
+
+**Column Structure**:
+- Column 0: `timestamp` (Unix timestamp)
+- Column 1: `open` (opening price)
+- Column 2: `high` (highest price)
+- Column 3: `low` (lowest price)
+- Column 4: `close` (closing price) ← Used for calculations
+- Column 5: `volume` (trading volume)
+- Column 6: `trades` (number of trades)
+
+#### 4. Place Files in Directory
+
+Move your prepared CSV files to the `kraken_historical_ohlc_data` folder:
+
+```
+crypto-taxes/
+├── kraken_historical_ohlc_data/
+│   ├── XBTEUR_1440.csv
+│   ├── XETHEUR_1440.csv
+│   ├── XRPEUR_1440.csv
+│   └── ...
+├── main.py
+├── kraken.py
+└── ...
+```
+
+### How Integration Works
+
+#### Automatic Detection
+
+When you run the script for the first time (no `kraken_ohlc.parquet` file exists):
+
+1. **Checks for historical data**: Looks for CSV files in `kraken_historical_ohlc_data/`
+2. **Loads historical data**: Reads all available CSV files for your portfolio assets
+3. **Creates initial dataset**: Combines historical data into the OHLC DataFrame
+4. **Fetches new data**: Downloads only the latest data from Kraken API
+5. **Merges and saves**: Combines historical + new data and saves to `kraken_ohlc.parquet`
+
+#### Subsequent Runs
+
+On subsequent runs (when `kraken_ohlc.parquet` exists):
+
+1. **Loads existing data**: Reads from the parquet file
+2. **Skips CSV processing**: Uses the existing integrated dataset
+3. **Incremental updates**: Only fetches new data since the last timestamp
+4. **Efficient operation**: No need to reprocess historical CSV files
+
+### Example Integration Process
+
+```bash
+# First run - integrates historical data
+python main.py
+# Output: "Loading historical data for XXBT from kraken_historical_ohlc_data/XBTEUR_1440.csv"
+# Output: "Created initial dataset with 1000 historical records"
+
+# Subsequent runs - incremental updates only
+python main.py
+# Output: "Loaded existing OHLC data: 1000 records"
+# Output: "Latest timestamp for XXBT: 1234567890 (2024-01-15 14:30:00)"
+# Output: "Fetching data for XXBT (XBTEUR)"
+```
+
+### Benefits
+
+- **🚀 Faster Setup**: No need to download years of data via API
+- **💰 Cost Effective**: Reduces API usage and rate limit consumption
+- **📊 Complete Coverage**: Ensures comprehensive historical data
+- **🔄 Efficient Updates**: Only fetches new data on subsequent runs
+- **🛡️ Data Integrity**: Validates and filters incomplete data automatically
+
+### Troubleshooting Historical Data
+
+#### Common Issues
+
+1. **"No historical CSV file found"**
+   - Check file naming: must be `{PAIRNAME}_1440.csv`
+   - Verify file location: must be in `kraken_historical_ohlc_data/` folder
+   - Ensure CSV format: no headers, correct column order
+
+2. **"CSV file doesn't have expected columns"**
+   - Verify CSV format: timestamp,open,high,low,close,volume,trades
+   - Check for extra/missing columns
+   - Ensure no header row is present
+
+3. **"Error loading historical data"**
+   - Check file permissions
+   - Verify CSV file is not corrupted
+   - Ensure timestamp values are valid Unix timestamps
+
+#### Data Quality Checks
+
+The script automatically performs data quality checks:
+
+- **Interval validation**: Ensures 1440-minute intervals between data points
+- **Timestamp filtering**: Discards incomplete data based on Kraken's `last` field
+- **Duplicate removal**: Automatically handles and removes duplicate entries
+- **Format validation**: Verifies data structure and converts to proper types
 
 ## Italian Tax Rules 2025
 

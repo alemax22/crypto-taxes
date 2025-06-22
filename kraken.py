@@ -125,7 +125,10 @@ def get_tradable_assets():
 
 # Get OHLC data single pair
 # since is the timestamp of the last data point we have (so it want be retrieved again)
-def get_ohlc_data(pair, altname, interval=21600, since=None):
+# the service return the last field, which indicates the latest historical valid timestamp, that MUST be used to retrive the new samples
+# it might happen that the service return also timestamp more recent than the last field, but they are not valid as the interval is not complete
+# for this reason the function discards all the samples after the last field
+def get_ohlc_data(pair, altname, interval=1440, since=None):
     if since is not None:
         resp_ohlc_data = kraken_public_request('/0/public/OHLC?pair=' + pair + '&interval=' + str(interval) + '&since=' + str(since))
     else:
@@ -135,6 +138,14 @@ def get_ohlc_data(pair, altname, interval=21600, since=None):
     if len(resp_ohlc_data_json["error"]) == 0:
         resp_ohlc_data_df = pd.DataFrame(resp_ohlc_data_json["result"][altname], columns=["timestamp","open","high","low","close","vwap","volume","count"])
         resp_ohlc_data_df = resp_ohlc_data_df.set_index("timestamp")
+        
+        # Get the 'last' field from the API response
+        last_valid_timestamp = resp_ohlc_data_json["result"]["last"]
+        
+        # Discard all samples after the last valid timestamp
+        if not resp_ohlc_data_df.empty:
+            resp_ohlc_data_df = resp_ohlc_data_df[resp_ohlc_data_df.index <= last_valid_timestamp]
+            print(f"Discarded samples after timestamp {last_valid_timestamp} (kept {len(resp_ohlc_data_df)} valid samples)")
     else:
         print(resp_ohlc_data_json["error"])
     return resp_ohlc_data_df
@@ -351,8 +362,6 @@ def calculate_year_end_balances(ledger_df, OHLC_df, reference_asset="ZEUR", exce
     print("YEAR-END BALANCE SUMMARY")
     print("="*80)
     
-    total_portfolio_value = Decimal(0)
-    
     for year in years:
         print(f"\n--- {year} YEAR-END BALANCE (December 31, {year}) ---")
         
@@ -430,23 +439,18 @@ def calculate_year_end_balances(ledger_df, OHLC_df, reference_asset="ZEUR", exce
         
         # Print year summary
         if year_summary:
-            print(f"{'Asset':<10} {'Balance':<15} {'Price (EUR)':<12} {'Value (EUR)':<12}")
-            print("-" * 55)
+            print(f"{'Asset':<15} {'Balance':<15} {'Price (EUR)':<12} {'Value (EUR)':<12}")
+            print("-" * 60)
             
             for item in year_summary:
-                print(f"{item['Asset']:<10} {item['Balance']:<15.8f} {item['Price (EUR)']:<12.4f} {item['Value (EUR)']:<12.2f}")
+                print(f"{item['Asset']:<15} {item['Balance']:<15.8f} {item['Price (EUR)']:<12.4f} {item['Value (EUR)']:<12.2f}")
             
-            print("-" * 55)
-            print(f"{'TOTAL':<10} {'':<15} {'':<12} {float(year_total_value):<12.2f}")
-            total_portfolio_value += year_total_value
+            print("-" * 60)
+            print(f"{'TOTAL':<15} {'':<15} {'':<12} {float(year_total_value):<12.2f}")
         else:
             print("No assets with non-zero balance")
     
-    print(f"\n{'='*80}")
-    print(f"TOTAL PORTFOLIO VALUE ACROSS ALL YEARS: {float(total_portfolio_value):.2f} EUR")
-    print(f"{'='*80}")
-    
-    return total_portfolio_value
+    return year_summary
 
 def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", exception_assets=["KFEE","NFT"], start_date="2021-01-01"):
     """
@@ -456,8 +460,7 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
     Returns:
         DataFrame with MultiIndex (date, crypto) and 'price' column
     """
-    import time
-    from datetime import datetime, timedelta
+    
     
     filename = "kraken_ohlc.parquet"
     tradable_asset_pair = create_tradable_asset_matrix()
@@ -476,9 +479,63 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
     existing_ohlc_df = pd.DataFrame()
     try:
         existing_ohlc_df = pd.read_parquet(filename, engine="fastparquet")
-        print(f"Loaded existing OHLC data: {existing_ohlc_df.shape[0]} records")
+        print(f"\tLoaded existing OHLC data: {existing_ohlc_df.shape[0]} records")
     except FileNotFoundError:
-        print("No existing OHLC data found, starting fresh")
+        print("No existing OHLC data found, checking for historical CSV files...")
+        
+        # Check if kraken_historical_ohlc_data folder exists
+        csv_folder = "kraken_historical_ohlc_data"
+        if os.path.exists(csv_folder):
+            print(f"Found historical data folder: {csv_folder}")
+            
+            # Collect historical data from CSV files
+            historical_data = []
+            
+            for asset in assets_in_portfolio:
+                if (asset not in exception_assets) and (asset != reference_asset):
+                    try:
+                        pair_name = tradable_asset_pair.loc[asset, reference_asset].loc["altname"]
+                        
+                        # Look for CSV file with 1440 minutes frequency
+                        csv_filename = f"{csv_folder}/{pair_name}_1440.csv"
+                        
+                        if os.path.exists(csv_filename):
+                            print(f"Loading historical data for {asset} from {csv_filename}")
+                            
+                            # Read CSV file without headers and with specific column names
+                            csv_df = pd.read_csv(csv_filename, header=None, 
+                                                names=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'trades'])
+                            
+                            # Convert timestamp to datetime and normalize to date
+                            csv_df["date"] = pd.to_datetime(csv_df["timestamp"], unit='s').dt.normalize()
+                            
+                            # Convert close price to Decimal and create records
+                            for _, row in csv_df.iterrows():
+                                price = decimal_from_value(row["close"])
+                                historical_data.append({
+                                    'date': row["date"],
+                                    'crypto': asset,
+                                    'price': price,
+                                    'timestamp': row["timestamp"]
+                                })
+                            
+                            print(f"Loaded {len(csv_df)} historical records for {asset}")
+                        else:
+                            print(f"No historical CSV file found for {asset} ({csv_filename})")
+                            
+                    except Exception as e:
+                        print(f"Error loading historical data for {asset}: {e}")
+                        continue
+            
+            # Create DataFrame from historical data
+            if historical_data:
+                existing_ohlc_df = pd.DataFrame(historical_data)
+                existing_ohlc_df = existing_ohlc_df.set_index(['date', 'crypto'])
+                print(f"Created initial dataset with {len(historical_data)} historical records")
+            else:
+                print("No historical data found, starting fresh")
+        else:
+            print(f"Historical data folder {csv_folder} not found, starting fresh")
     
     # Collect new OHLC data
     new_ohlc_data = []
@@ -497,12 +554,20 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
                         latest_timestamp = asset_data['timestamp'].max()
                         print(f"Latest timestamp for {asset}: {latest_timestamp} ({datetime.fromtimestamp(latest_timestamp)})")
                 
+                # Check if we need to fetch new data (avoid calls for very recent timestamps)
+                current_time = datetime.now().timestamp()
+                min_interval_seconds = 1440 * 60 * 2 # 2 * 1440 minutes in seconds
+                
+                if latest_timestamp is not None and (current_time - latest_timestamp) < min_interval_seconds:
+                    print(f"Skipping {asset} - latest data is too recent (less than 1440 minutes ago)")
+                    continue
+                
                 print(f"Fetching data for {asset} ({pair_name})")
                 
                 # Get OHLC data with daily interval (1440 minutes) and latest timestamp
                 ohlc_df = get_ohlc_data(pair_name, pair_altname, interval=1440, since=latest_timestamp)
 
-                print(f"fetched {ohlc_df.shape[0]} rows")
+                print(f"\tfetched {ohlc_df.shape[0]} rows")
                 
                 if not ohlc_df.empty:
                     # Reset index to get timestamp as column
@@ -556,6 +621,25 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
         combined_df.to_parquet(filename, engine="fastparquet", compression="GZIP")
         print(f"Saved OHLC data to {filename}")
     
+    # # Check that the distance between every sample of the same asset is 1440 minutes
+    # for asset in combined_df.index.get_level_values('crypto').unique():
+    #     asset_data = combined_df.xs(asset, level='crypto')
+    #     if not asset_data.empty:
+    #         # Sort by timestamp before checking intervals
+    #         asset_data = asset_data.sort_values('timestamp')
+    #         # Get the difference between consecutive timestamps
+    #         time_diffs = asset_data['timestamp'].diff().dropna()
+    #         # Check if all differences are 1440 minutes (1440 * 60 seconds)
+    #         if not (time_diffs == 1440 * 60).all():
+    #             print(f"WARNING: {asset} has non-1440 minute intervals")
+    #             # Print all samples with different intervals
+    #             non_standard_intervals = time_diffs[time_diffs != 1440 * 60]
+    #             for idx, interval in non_standard_intervals.items():
+    #                 interval_minutes = interval / 60
+    #                 print(f"  {asset}: timestamp {idx} has interval of {interval_minutes:.0f} minutes")
+
+    print(f"Combined data: {combined_df.shape[0]} records")
+
     # Return only the price column for compatibility with existing code
     if not combined_df.empty:
         return combined_df[['price']]
@@ -564,5 +648,7 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
 
 if __name__ == "__main__":
     # Call the get_ohlc_data_with_persistence function with the assets in the portfolio
-    assets_in_portfolio = ["XBTC", "XETH", "XRP", "SOL", "ADA"]
+    assets_in_portfolio = ['POL', 'XETH', 'SOL', 'KSM', 'DOT', 'ATOM', 'ADA', 'XXBT', 'MATIC',
+       'XXRP', 'AAVE', 'ENA', 'UNI', 'EOS', 'LUNA', 'ALGO', 'ETHW', 'LUNA2',
+       '1INCH', 'UST']
     get_ohlc_data_with_persistence(assets_in_portfolio)
