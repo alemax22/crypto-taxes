@@ -139,6 +139,9 @@ def main():
     balance_df = balance_df[["balance","assetnorm"]]
     balance_df = balance_df.groupby(['assetnorm']).sum()
 
+    print("Balance assets:")
+    print(balance_df.index.unique())
+
     # Calculate year-end balances before simulating taxes
     kraken.calculate_year_end_balances(ledger_df, OHLC_df, reference_asset, exception_assets)
 

@@ -425,8 +425,8 @@ def calculate_year_end_balances(ledger_df, OHLC_df, reference_asset="ZEUR", exce
                 
                 year_total_value += eur_value
         
-        # Sort by EUR value (descending)
-        year_summary.sort(key=lambda x: x['Value (EUR)'], reverse=True)
+        # Sort by asset name (alphabetically)
+        year_summary.sort(key=lambda x: x['Asset'], reverse=False)  # Sort alphabetically by asset name
         
         # Print year summary
         if year_summary:
