@@ -195,3 +195,4 @@ cython_debug/
 
 *.key
 *.parquet
+kraken_historical_ohlc_data/*

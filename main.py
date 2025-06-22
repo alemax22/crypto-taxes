@@ -117,41 +117,19 @@ def main():
     print(ledger_df_trade_final.shape)
 
     ## UPDATE CURRENT PRICE OF CRYPTOS
-    # Compute for each crypto the quantity to be sold
-    tradable_asset_pair = kraken.create_tradable_asset_matrix()
-    # MATIC was replaced with POL - Create the new row data
-    new_row_data = {
-        'altname': 'POLEUR',
-        'index': 'POLEUR',
-        'wsname': 'POL/EUR'
-    }
-    new_index = pd.MultiIndex.from_tuples([('MATIC', 'ZEUR')], names=['base', 'quote'])
-    new_row_df = pd.DataFrame([new_row_data], index=new_index)
-    tradable_asset_pair = pd.concat([tradable_asset_pair, new_row_df])
-    OHLC_df = pd.DataFrame([])
-    metric = "close"
-    interval = 1
-    for asset in assets_in_portofolio:
-        if (asset not in exception_assets) and (asset != reference_asset):
-            # print("Downloading data for asset pair: "+asset + " / " + reference_asset)
-            pair_name = tradable_asset_pair.loc[asset,reference_asset].loc["altname"]
-            pair_altname = tradable_asset_pair.loc[asset,reference_asset].loc["index"]
-            # Retrieve OHLC data
-            print("pair_name",pair_name,"pair_altname",pair_altname)
-            OHLC_df_current = kraken.get_ohlc_data(pair_name, pair_altname, interval)
-            # Reformat data
-            OHLC_df_current = OHLC_df_current.reset_index()
-            OHLC_df_current["date"] = pd.to_datetime(OHLC_df_current["timestamp"], unit='s')
-            # Convert to Decimal
-            OHLC_df_current[metric] = OHLC_df_current.apply(lambda row: kraken.decimal_from_value(row[metric]), axis=1)
-            OHLC_df_current = pd.DataFrame(OHLC_df_current[metric])
-            OHLC_df_current = OHLC_df_current.rename(columns={metric: asset})
-            OHLC_df_current = OHLC_df_current.transpose()
-            OHLC_df = pd.concat([OHLC_df, OHLC_df_current])
-
-    OHLC_df = OHLC_df.iloc[:,-1:]
-    # Rename column without knowing its name
-    OHLC_df.rename(columns = {list(OHLC_df)[0]: 'price'}, inplace = True)
+    # Get OHLC data with persistence - this will load existing data and fetch new data as needed
+    print("\nFetching OHLC data with persistence...")
+    OHLC_df = kraken.get_ohlc_data_with_persistence(
+        assets_in_portfolio=assets_in_portofolio,
+        reference_asset=reference_asset,
+        exception_assets=exception_assets,
+        start_date=start_date
+    )
+    
+    print(f"OHLC data shape: {OHLC_df.shape}")
+    if not OHLC_df.empty:
+        print(f"Date range: {OHLC_df.index.get_level_values('date').min()} to {OHLC_df.index.get_level_values('date').max()}")
+        print(f"Assets: {OHLC_df.index.get_level_values('crypto').unique()}")
 
     ## SELLING STRATEGY AUTOMATIC
     balance_df = kraken.get_balance_dataframe(api_key, api_sec)
@@ -160,6 +138,9 @@ def main():
     balance_df["balance"] = balance_df.apply(lambda row: kraken.decimal_from_value(row["balance"]), axis=1)
     balance_df = balance_df[["balance","assetnorm"]]
     balance_df = balance_df.groupby(['assetnorm']).sum()
+
+    # Calculate year-end balances before simulating taxes
+    kraken.calculate_year_end_balances(ledger_df, OHLC_df, reference_asset, exception_assets)
 
     ledger_out_df3, gains_final_df = kraken.simulate_taxes(ledger_df_trade_final, None)
     gains_final_df = gains_final_df.groupby(['year','asset']).sum()

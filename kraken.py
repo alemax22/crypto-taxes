@@ -7,7 +7,7 @@ import hmac
 import base64
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import os
 from config import KRAKEN_API_SETTINGS
@@ -124,8 +124,12 @@ def get_tradable_assets():
     return resp_trad_assets.json() 
 
 # Get OHLC data single pair
-def get_ohlc_data(pair, altname, interval=21600):
-    resp_ohlc_data = kraken_public_request('/0/public/OHLC?pair=' + pair + '&interval=' + str(interval))
+# since is the timestamp of the last data point we have (so it want be retrieved again)
+def get_ohlc_data(pair, altname, interval=21600, since=None):
+    if since is not None:
+        resp_ohlc_data = kraken_public_request('/0/public/OHLC?pair=' + pair + '&interval=' + str(interval) + '&since=' + str(since))
+    else:
+        resp_ohlc_data = kraken_public_request('/0/public/OHLC?pair=' + pair + '&interval=' + str(interval))
     resp_ohlc_data_json = resp_ohlc_data.json()
     resp_ohlc_data_df = pd.DataFrame([])
     if len(resp_ohlc_data_json["error"]) == 0:
@@ -333,3 +337,232 @@ def simulate_taxes(input_ledger_df, input_quantity_to_sell_df=None):
     output_ledger_df, gains_by_year_df = get_ledger_after_tax_computation(input_ledger_without_sells_df, input_quantity_already_sold_df)
     
     return output_ledger_df, gains_by_year_df
+
+def calculate_year_end_balances(ledger_df, OHLC_df, reference_asset="ZEUR", exception_assets=["KFEE","NFT"]):
+    """
+    Calculate the balance of each crypto at the end of each taxation year
+    and their EUR countervalue using the market prices.
+    """
+    # Get unique years from the ledger data
+    years = ledger_df['date'].dt.year.unique()
+    years = sorted(years)
+    
+    print("\n" + "="*80)
+    print("YEAR-END BALANCE SUMMARY")
+    print("="*80)
+    
+    total_portfolio_value = Decimal(0)
+    
+    for year in years:
+        print(f"\n--- {year} YEAR-END BALANCE (December 31, {year}) ---")
+        
+        # Filter ledger data up to the end of the year
+        year_end_date = f"{year}-12-31"
+        ledger_until_year_end = ledger_df[ledger_df['date'] <= year_end_date].copy()
+        
+        # Calculate running balance for each asset
+        balance_by_asset = {}
+        
+        for _, row in ledger_until_year_end.iterrows():
+            asset = row['assetnorm']
+            amount = row['decimalamount']
+            
+            if asset not in balance_by_asset:
+                balance_by_asset[asset] = Decimal(0)
+            
+            balance_by_asset[asset] += amount
+        
+        # Create summary table for this year
+        year_summary = []
+        year_total_value = Decimal(0)
+        
+        for asset, balance in balance_by_asset.items():
+            if balance != 0 and asset not in exception_assets:
+                # Get EUR price for this asset
+                if asset == reference_asset:
+                    eur_value = balance
+                    price = Decimal(1)
+                else:
+                    # Try to get price for the year-end date
+                    try:
+                        year_end_datetime = pd.to_datetime(year_end_date)
+                        # Look for price data for this asset and date
+                        if not OHLC_df.empty and (year_end_datetime, asset) in OHLC_df.index:
+                            price = decimal_from_value(OHLC_df.loc[(year_end_datetime, asset), 'price'])
+                        else:
+                            # Try to get the latest available price for this asset
+                            asset_data = OHLC_df.xs(asset, level='crypto', drop_level=False) if not OHLC_df.empty else pd.DataFrame()
+                            if not asset_data.empty:
+                                # Get the latest price before or on the year-end date
+                                available_dates = asset_data.index.get_level_values('date')
+                                valid_dates = available_dates[available_dates <= year_end_datetime]
+                                if len(valid_dates) > 0:
+                                    latest_date = valid_dates.max()
+                                    # If you do not have the price for the last day of the year, use the latest available price
+                                    price_value = asset_data.loc[latest_date, 'price']
+                                    if isinstance(price_value, pd.Series):
+                                        price_value = price_value.iloc[0]  # Get the latest date available 
+                                    price = decimal_from_value(price_value)
+                                else:
+                                    price = Decimal(0)
+                                    print(f"  Warning: No price data found for {asset} before {year_end_date}")
+                            else:
+                                price = Decimal(0)
+                                print(f"  Warning: No price data found for {asset}")
+                        
+                        eur_value = balance * price
+                    except Exception as e:
+                        price = Decimal(0)
+                        eur_value = Decimal(0)
+                        print(f"  Warning: Error getting price for {asset}: {e}")
+                
+                year_summary.append({
+                    'Asset': asset,
+                    'Balance': float(balance),
+                    'Price (EUR)': float(price),
+                    'Value (EUR)': float(eur_value)
+                })
+                
+                year_total_value += eur_value
+        
+        # Sort by EUR value (descending)
+        year_summary.sort(key=lambda x: x['Value (EUR)'], reverse=True)
+        
+        # Print year summary
+        if year_summary:
+            print(f"{'Asset':<10} {'Balance':<15} {'Price (EUR)':<12} {'Value (EUR)':<12}")
+            print("-" * 55)
+            
+            for item in year_summary:
+                print(f"{item['Asset']:<10} {item['Balance']:<15.8f} {item['Price (EUR)']:<12.4f} {item['Value (EUR)']:<12.2f}")
+            
+            print("-" * 55)
+            print(f"{'TOTAL':<10} {'':<15} {'':<12} {float(year_total_value):<12.2f}")
+            total_portfolio_value += year_total_value
+        else:
+            print("No assets with non-zero balance")
+    
+    print(f"\n{'='*80}")
+    print(f"TOTAL PORTFOLIO VALUE ACROSS ALL YEARS: {float(total_portfolio_value):.2f} EUR")
+    print(f"{'='*80}")
+    
+    return total_portfolio_value
+
+def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", exception_assets=["KFEE","NFT"], start_date="2021-01-01"):
+    """
+    Get OHLC data for multiple assets with persistence to parquet file.
+    Queries the API day by day and merges with existing data.
+    
+    Returns:
+        DataFrame with MultiIndex (date, crypto) and 'price' column
+    """
+    import time
+    from datetime import datetime, timedelta
+    
+    filename = "kraken_ohlc.parquet"
+    tradable_asset_pair = create_tradable_asset_matrix()
+    
+    # Add MATIC/POL mapping
+    new_row_data = {
+        'altname': 'POLEUR',
+        'index': 'POLEUR',
+        'wsname': 'POL/EUR'
+    }
+    new_index = pd.MultiIndex.from_tuples([('MATIC', 'ZEUR')], names=['base', 'quote'])
+    new_row_df = pd.DataFrame([new_row_data], index=new_index)
+    tradable_asset_pair = pd.concat([tradable_asset_pair, new_row_df])
+    
+    # Load existing data
+    existing_ohlc_df = pd.DataFrame()
+    try:
+        existing_ohlc_df = pd.read_parquet(filename, engine="fastparquet")
+        print(f"Loaded existing OHLC data: {existing_ohlc_df.shape[0]} records")
+    except FileNotFoundError:
+        print("No existing OHLC data found, starting fresh")
+    
+    # Collect new OHLC data
+    new_ohlc_data = []
+    
+    for asset in assets_in_portfolio:
+        if (asset not in exception_assets) and (asset != reference_asset):
+            try:
+                pair_name = tradable_asset_pair.loc[asset, reference_asset].loc["altname"]
+                pair_altname = tradable_asset_pair.loc[asset, reference_asset].loc["index"]
+                
+                # Get the latest timestamp for this asset from existing data
+                latest_timestamp = None
+                if not existing_ohlc_df.empty:
+                    asset_data = existing_ohlc_df.xs(asset, level='crypto', drop_level=False) if asset in existing_ohlc_df.index.get_level_values('crypto') else pd.DataFrame()
+                    if not asset_data.empty and 'timestamp' in asset_data.columns:
+                        latest_timestamp = asset_data['timestamp'].max()
+                        print(f"Latest timestamp for {asset}: {latest_timestamp} ({datetime.fromtimestamp(latest_timestamp)})")
+                
+                print(f"Fetching data for {asset} ({pair_name})")
+                
+                # Get OHLC data with daily interval (1440 minutes) and latest timestamp
+                ohlc_df = get_ohlc_data(pair_name, pair_altname, interval=1440, since=latest_timestamp)
+
+                print(f"fetched {ohlc_df.shape[0]} rows")
+                
+                if not ohlc_df.empty:
+                    # Reset index to get timestamp as column
+                    ohlc_df = ohlc_df.reset_index()
+                    ohlc_df["date"] = pd.to_datetime(ohlc_df["timestamp"], unit='s').dt.normalize()
+                    
+                    # Convert close price to Decimal and create records
+                    for _, row in ohlc_df.iterrows():
+                        price = decimal_from_value(row["close"])
+                        new_ohlc_data.append({
+                            'date': row["date"],
+                            'crypto': asset,
+                            'price': price,
+                            'timestamp': row["timestamp"]
+                        })
+                
+                # Sleep to avoid rate limiting
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"Error fetching data for {asset}: {e}")
+                continue
+    
+    # Create new DataFrame
+    if new_ohlc_data:
+        new_ohlc_df = pd.DataFrame(new_ohlc_data)
+        new_ohlc_df = new_ohlc_df.set_index(['date', 'crypto'])
+        print(f"Fetched {len(new_ohlc_data)} new OHLC records")
+    else:
+        new_ohlc_df = pd.DataFrame()
+        print("No new OHLC data fetched")
+    
+    # Merge with existing data
+    if not existing_ohlc_df.empty and not new_ohlc_df.empty:
+        # Combine existing and new data
+        combined_df = pd.concat([existing_ohlc_df, new_ohlc_df])
+        # Remove duplicates (keep the newest instance)
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        print(f"Combined data: {combined_df.shape[0]} records and deleted {existing_ohlc_df.shape[0] + new_ohlc_df.shape[0] - combined_df.shape[0]} duplicates")
+    elif not existing_ohlc_df.empty:
+        combined_df = existing_ohlc_df
+    elif not new_ohlc_df.empty:
+        combined_df = new_ohlc_df
+    else:
+        # Create empty DataFrame with proper structure
+        combined_df = pd.DataFrame(columns=['price', 'timestamp'])
+        combined_df.index = pd.MultiIndex.from_tuples([], names=['date', 'crypto'])
+    
+    # Save to parquet file (with timestamp included)
+    if not combined_df.empty:
+        combined_df.to_parquet(filename, engine="fastparquet", compression="GZIP")
+        print(f"Saved OHLC data to {filename}")
+    
+    # Return only the price column for compatibility with existing code
+    if not combined_df.empty:
+        return combined_df[['price']]
+    else:
+        return combined_df
+
+if __name__ == "__main__":
+    # Call the get_ohlc_data_with_persistence function with the assets in the portfolio
+    assets_in_portfolio = ["XBTC", "XETH", "XRP", "SOL", "ADA"]
+    get_ohlc_data_with_persistence(assets_in_portfolio)
