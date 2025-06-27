@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  crypto-taxes:
+    build: .
+    container_name: crypto-taxes-app
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    volumes:
+      # Mount data directory for persistent storage
+      - ./data:/app/data
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount .env file for credential persistence
+      - ./.env:/app/.env
+      - ./secret.key:/app/secret.key  # Persist secret.key for encryption
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - crypto-taxes-network
+
+networks:
+  crypto-taxes-network:
+    driver: bridge
+
+volumes:
+  crypto-taxes-data: 

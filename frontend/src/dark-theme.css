@@ -1,0 +1,156 @@
+/* Dark Blue Theme for Crypto Taxes App */
+html, body, #root, .App {
+  background-color: #0f1419 !important;
+  color: #e0e0e0 !important;
+  min-height: 100vh;
+}
+
+:root {
+  --bs-body-bg: #0f1419;
+  --bs-body-color: #e0e0e0;
+  --bs-card-bg: #1a1f2e;
+  --bs-card-color: #e0e0e0;
+  --bs-primary: #4f8cff;
+  --bs-secondary: #6c757d;
+  --bs-success: #28a745;
+  --bs-danger: #dc3545;
+  --bs-warning: #ffc107;
+  --bs-info: #17a2b8;
+  --bs-light: #2a3441;
+  --bs-dark: #0f1419;
+  --bs-border-color: #2a3441;
+}
+
+body {
+  background-color: var(--bs-body-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+.card {
+  background-color: var(--bs-card-bg) !important;
+  color: var(--bs-card-color) !important;
+  border-color: var(--bs-border-color) !important;
+}
+
+.navbar, .modal-content {
+  background-color: #1a1f2e !important;
+  color: #e0e0e0 !important;
+}
+
+.table {
+  color: #e0e0e0;
+  background-color: #1a1f2e;
+}
+
+.table th, .table td {
+  border-color: #2a3441;
+}
+
+.form-control, .form-select {
+  background-color: #1a1f2e;
+  color: #e0e0e0;
+  border-color: #2a3441;
+}
+
+.form-control:focus {
+  background-color: #1a1f2e;
+  color: #fff;
+  border-color: #4f8cff;
+}
+
+.btn-primary {
+  background-color: #4f8cff;
+  border-color: #4f8cff;
+}
+
+.btn-secondary {
+  background-color: #2a3441;
+  border-color: #2a3441;
+  color: #e0e0e0;
+}
+
+.btn-outline-primary {
+  color: #4f8cff;
+  border-color: #4f8cff;
+}
+
+.alert-info {
+  background-color: #1a1f2e;
+  color: #4f8cff;
+  border-color: #4f8cff;
+}
+
+.alert-danger {
+  background-color: #2d1a1a;
+  color: #ff6b6b;
+  border-color: #dc3545;
+}
+
+.alert-success {
+  background-color: #1a2d1a;
+  color: #28a745;
+  border-color: #28a745;
+}
+
+.alert-warning {
+  background-color: #2d261a;
+  color: #ffc107;
+  border-color: #ffc107;
+}
+
+.badge {
+  background-color: #2a3441;
+  color: #e0e0e0;
+}
+
+.table-hover tbody tr:hover {
+  background-color: #1a1f2e;
+}
+
+.modal-content {
+  background-color: #1a1f2e;
+  color: #e0e0e0;
+}
+
+.stats-card {
+  background-color: #1a1f2e !important;
+  color: #e0e0e0 !important;
+  border-radius: 1rem;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.10);
+  padding: 1.5rem 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 100px;
+}
+
+.stats-number {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: #4f8cff;
+}
+
+.stats-label {
+  font-size: 1rem;
+  color: #e0e0e0;
+  opacity: 0.8;
+}
+
+.recharts-wrapper {
+  background-color: transparent !important;
+}
+
+.navbar-dark {
+  background-color: #1a1f2e !important;
+}
+
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-nav .nav-link {
+  color: #e0e0e0 !important;
+}
+
+.navbar-dark .navbar-nav .nav-link:hover {
+  color: #4f8cff !important;
+} 

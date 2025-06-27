@@ -1,4 +1,15 @@
-# Byte-compiled / optimized / DLL files
+# Environment variables
+.env
+
+# Encryption keys
+secret.key
+
+# Data files
+*.parquet
+kraken_ledger.parquet
+kraken_ohlc.parquet
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,6 +36,55 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js (for React frontend)
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+frontend/coverage/
+frontend/.nyc_output
+frontend/.npm
+frontend/.eslintcache
+frontend/build/
+frontend/.DS_Store
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -194,5 +254,4 @@ cython_debug/
 .cursorindexingignore
 
 *.key
-*.parquet
 kraken_historical_ohlc_data/*

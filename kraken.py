@@ -11,6 +11,10 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import os
 from config import KRAKEN_API_SETTINGS
+import logging
+import json
+
+logger = logging.getLogger(__name__)
 
 # Convert value to Decimal
 def decimal_from_value(value):
@@ -55,17 +59,23 @@ def decrypt_message(encrypted_message):
     return decrypted_message.decode()
 
 def get_kraken_api_key():
-    
-    encrypted_key = os.environ.get("KRAKEN_API_KEY")
+    api_file = 'kraken_api_keys.json'
+    if not os.path.exists(api_file):
+        raise Exception('API key file not found')
+    with open(api_file, 'r') as f:
+        api_data = json.load(f)
+    encrypted_key = api_data.get("KRAKEN_API_KEY")
     decrypted_key = decrypt_message(encrypted_key)
-    
     return decrypted_key
 
 def get_kraken_api_sec():
-    
-    encrypted_key = os.environ.get("KRAKEN_API_SECRET")
+    api_file = 'kraken_api_keys.json'
+    if not os.path.exists(api_file):
+        raise Exception('API key file not found')
+    with open(api_file, 'r') as f:
+        api_data = json.load(f)
+    encrypted_key = api_data.get("KRAKEN_API_SECRET")
     decrypted_key = decrypt_message(encrypted_key)
-    
     return decrypted_key
 
 def write_key_to_file(key, file_name):
@@ -210,7 +220,7 @@ def retrieve_all_ledger_data(start_date, api_key, api_sec):
 # Get the current balance
 def get_balance(api_key, api_sec, without_count = "false"):
     resp_ledger = kraken_request('/0/private/Balance', {
-            "nonce": str(int(1000*time.time()))
+            "nonce": str(int(1_000_000*time.time()))
         }, api_key, api_sec)
     return resp_ledger.json() 
 
@@ -488,8 +498,11 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
     """
     
     
-    filename = "kraken_ohlc.parquet"
+    filename = "data/kraken_ohlc.parquet"
     tradable_asset_pair = create_tradable_asset_matrix()
+    
+    # Ensure data directory exists
+    os.makedirs("data", exist_ok=True)
     
     # Add MATIC/POL mapping
     new_row_data = {
