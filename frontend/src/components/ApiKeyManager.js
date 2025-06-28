@@ -19,12 +19,10 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
   const checkCredentialsStatus = async () => {
     try {
       const response = await axios.get('/api/check-credentials');
-      if (response.data.success) {
+      if (response.data.valid) {
         setCredentialsStatus(response.data);
         // Notify parent if credentials are valid
-        if (response.data.configured && onCredentialsSet) {
-          onCredentialsSet();
-        }
+        onCredentialsSet();
       }
     } catch (err) {
       console.error('Error checking credentials status:', err);
@@ -43,8 +41,8 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
         api_secret: apiSecret
       });
 
-      if (response.data.success) {
-        setSuccess(response.data.message);
+      if (response.data.valid) {
+        setSuccess(response.data.valid);
         setApiKey('');
         setApiSecret('');
         setShowModal(false);
@@ -78,7 +76,7 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
 
   const getStatusBadge = () => {
     if (!credentialsStatus) return null;
-    if (credentialsStatus.configured) return null;
+    if (credentialsStatus.valid) return null;
     return (
       <div className="d-flex align-items-center">
         <span className="badge bg-warning me-2">⚠ Not Configured</span>
@@ -89,7 +87,7 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
 
   return (
     <>
-      <Card className="mb-4">
+      <Card className="stats-card mb-4">
         <Card.Header>
           <div className="d-flex justify-content-between align-items-center">
             <h5 className="mb-0">Kraken API Configuration</h5>
@@ -102,7 +100,7 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
             Your credentials will be encrypted and stored securely.
           </p>
           {/* Only show the warning and button if not configured */}
-          {!credentialsStatus?.configured && (
+          {!credentialsStatus?.valid && (
             <div className="text-center">
               <p className="text-warning mb-3">
                 <strong>⚠ API credentials are required to access your data</strong>
@@ -115,7 +113,7 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
               </Button>
             </div>
           )}
-          {credentialsStatus?.configured && (
+          {credentialsStatus?.valid && (
             <div className="text-center">
               <p className="text-success mb-3">
                 <strong>✓ API credentials are configured and ready to use!</strong>
@@ -161,7 +159,7 @@ const ApiKeyManager = ({ onCredentialsSet }) => {
                 disabled={loading}
               />
               <Form.Text className="text-muted">
-                Get your API key from <a href="https://www.kraken.com/u/settings/api" target="_blank" rel="noopener noreferrer">Kraken API Settings</a>
+                Get your API key from <a href="https://support.kraken.com/it-it/articles/360000919966-how-to-create-an-api-key" target="_blank" rel="noopener noreferrer">Kraken API Settings</a>
               </Form.Text>
             </Form.Group>
 

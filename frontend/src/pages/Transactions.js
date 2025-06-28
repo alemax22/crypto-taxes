@@ -158,7 +158,7 @@ const Transactions = () => {
       )}
 
       {/* Filters */}
-      <Card className="mb-4">
+      <Card className="stats-card mb-4">
         <Card.Header>Filters</Card.Header>
         <Card.Body>
           <Row>
@@ -205,7 +205,7 @@ const Transactions = () => {
       </Card>
 
       {/* Transactions Table */}
-      <Card>
+      <Card className="stats-card">
         <Card.Header>Transaction History</Card.Header>
         <Card.Body>
           {loading ? (

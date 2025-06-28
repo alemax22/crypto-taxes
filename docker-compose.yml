@@ -9,16 +9,9 @@ services:
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
-    env_file:
-      - .env
     volumes:
-      # Mount data directory for persistent storage
-      - ./data:/app/data
-      # Mount logs directory
-      - ./logs:/app/logs
-      # Mount .env file for credential persistence
-      - ./.env:/app/.env
-      - ./secret.key:/app/secret.key  # Persist secret.key for encryption
+      # Mount single persistent data volume
+      - crypto-taxes-data:/app/persistent_data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -34,4 +27,5 @@ networks:
     driver: bridge
 
 volumes:
-  crypto-taxes-data: 
+  crypto-taxes-data:
+    driver: local 

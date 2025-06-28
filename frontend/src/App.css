@@ -1,6 +1,6 @@
 .App {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: #181a20;
 }
 
 .navbar-brand {
@@ -67,24 +67,93 @@
 }
 
 .stats-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #181a20 0%, #232946 100%);
+  color: #fff !important;
   border: none;
+  box-shadow: 0 0.25rem 1rem rgba(24, 26, 32, 0.25);
+  border-radius: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.stats-card .card-header {
+  background: linear-gradient(90deg, #232946 60%, #1fc8db 100%);
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .stats-card .card-body {
-  padding: 1.5rem;
+  color: #fff;
 }
 
 .stats-number {
-  font-size: 2rem;
+  font-size: 2.4rem;
   font-weight: bold;
   margin-bottom: 0.5rem;
+  color: #1fc8db;
+  text-shadow: 0 2px 8px rgba(31,200,219,0.15);
 }
 
 .stats-label {
-  font-size: 0.9rem;
-  opacity: 0.9;
+  font-size: 1.05rem;
+  opacity: 0.85;
+  color: #bfc9da;
+}
+
+.stats-card .table,
+.stats-card .table th,
+.stats-card .table td {
+  color: #fff;
+  background: transparent;
+}
+
+.stats-card .alert,
+.stats-card .alert-heading,
+.stats-card .text-muted {
+  color: #bfc9da !important;
+}
+
+/* Accent color for badges inside cards */
+.stats-card .badge {
+  background: linear-gradient(90deg, #1fc8db 0%, #667eea 100%);
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 2px 8px rgba(31,200,219,0.10);
+}
+
+/* For No Data and empty states */
+.stats-card .text-muted, .stats-card .text-center, .stats-card h5, .stats-card p {
+  color: #bfc9da !important;
+}
+
+/* Recharts Pie/Bar chart label and tooltip overrides for dark cards */
+.recharts-default-tooltip, .recharts-tooltip-label {
+  color: #232946 !important;
+  background: #fff !important;
+  border-radius: 0.5rem !important;
+  font-weight: 600;
+}
+
+.recharts-layer text {
+  fill: #fff !important;
+  font-weight: 500;
+}
+
+/* Accent color for primary buttons */
+.btn-primary, .btn-calculate {
+  background: linear-gradient(90deg, #1fc8db 0%, #667eea 100%);
+  border: none;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(31,200,219,0.10);
+}
+
+.btn-primary:hover, .btn-calculate:hover {
+  background: linear-gradient(90deg, #667eea 0%, #1fc8db 100%);
+  color: #fff;
 }
 
 .table th {

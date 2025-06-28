@@ -111,7 +111,7 @@ const TaxSummary = () => {
           {/* Summary Cards */}
           <Row className="mb-4">
             <Col md={3}>
-              <Card className="stats-card">
+              <Card className="stats-card mb-4">
                 <Card.Body>
                   <div className="stats-number">
                     {formatCurrency(getTotalGains())}
@@ -121,7 +121,7 @@ const TaxSummary = () => {
               </Card>
             </Col>
             <Col md={3}>
-              <Card className="stats-card">
+              <Card className="stats-card mb-4">
                 <Card.Body>
                   <div className="stats-number">
                     {formatCurrency(getTotalTaxes())}
@@ -131,7 +131,7 @@ const TaxSummary = () => {
               </Card>
             </Col>
             <Col md={3}>
-              <Card className="stats-card">
+              <Card className="stats-card mb-4">
                 <Card.Body>
                   <div className="stats-number">
                     {formatCurrency(getTotalGains() - getTotalTaxes())}
@@ -141,7 +141,7 @@ const TaxSummary = () => {
               </Card>
             </Col>
             <Col md={3}>
-              <Card className="stats-card">
+              <Card className="stats-card mb-4">
                 <Card.Body>
                   <div className="stats-number">
                     {getTotalGains() > 0 ? ((getTotalTaxes() / getTotalGains()) * 100).toFixed(1) : 0}%

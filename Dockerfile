@@ -50,8 +50,10 @@ COPY kraken.py .
 COPY config.py .
 COPY setup_encryption.py .
 
-# Create directories for data storage
-RUN mkdir -p /app/data
+# Create persistent data directory structure
+RUN mkdir -p /app/persistent_data/data \
+    && mkdir -p /app/persistent_data/logs \
+    && mkdir -p /app/persistent_data/config
 
 # Create a non-root user
 RUN useradd --create-home --shell /bin/bash app \

@@ -112,7 +112,7 @@ const Balance = () => {
           <Row>
             {/* Balance Chart */}
             <Col md={6}>
-              <Card className="mb-4">
+              <Card className="stats-card mb-4">
                 <Card.Header>Portfolio Distribution</Card.Header>
                 <Card.Body>
                   {getAssetsWithBalance().length > 0 ? (
@@ -157,7 +157,7 @@ const Balance = () => {
 
             {/* Asset List */}
             <Col md={6}>
-              <Card className="mb-4">
+              <Card className="stats-card mb-4">
                 <Card.Header>Asset Breakdown</Card.Header>
                 <Card.Body>
                   {getAssetsWithBalance().length > 0 ? (
@@ -213,7 +213,7 @@ const Balance = () => {
           </Row>
 
           {/* Asset Grid */}
-          <Card>
+          <Card className="stats-card">
             <Card.Header>Asset Overview</Card.Header>
             <Card.Body>
               <Row>

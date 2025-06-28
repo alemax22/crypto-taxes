@@ -26,26 +26,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Define persistent data directory
+PERSISTENT_DATA_DIR = '/app/persistent_data'
+
+def ensure_persistent_dirs():
+    """Ensure all necessary directories exist in persistent data volume"""
+    dirs = [
+        os.path.join(PERSISTENT_DATA_DIR, 'data'),
+        os.path.join(PERSISTENT_DATA_DIR, 'logs'),
+        os.path.join(PERSISTENT_DATA_DIR, 'config')
+    ]
+    for dir_path in dirs:
+        os.makedirs(dir_path, exist_ok=True)
 
 def save_encrypted_credentials(api_key, api_secret):
     """
-    Save encrypted API credentials to kraken_api_keys.json
+    Save encrypted API credentials to persistent storage
     """
     try:
+        ensure_persistent_dirs()
+        
         # Check if secret.key exists, if not generate it
-        if not os.path.exists('secret.key'):
+        secret_key_path = os.path.join(PERSISTENT_DATA_DIR, 'config', 'secret.key')
+        if not os.path.exists(secret_key_path):
             logger.info("Secret key file not found. Generating new encryption key...")
-            kraken.generate_key()
+            kraken.generate_key(secret_key_path)
             logger.info("New encryption key generated successfully")
         
         # Encrypt the credentials
-        encrypted_key = kraken.encrypt_message(api_key)
-        encrypted_secret = kraken.encrypt_message(api_secret)
+        encrypted_key = kraken.encrypt_message(api_key, secret_key_path)
+        encrypted_secret = kraken.encrypt_message(api_secret, secret_key_path)
         
         # Store in JSON file
-        api_file = 'kraken_api_keys.json'
+        api_file = os.path.join(PERSISTENT_DATA_DIR, 'config', 'kraken_api_keys.json')
         api_data = {
             "KRAKEN_API_KEY": encrypted_key.decode() if isinstance(encrypted_key, bytes) else encrypted_key,
             "KRAKEN_API_SECRET": encrypted_secret.decode() if isinstance(encrypted_secret, bytes) else encrypted_secret
@@ -60,14 +73,36 @@ def save_encrypted_credentials(api_key, api_secret):
 
 def load_encrypted_credentials():
     """
-    Load encrypted API credentials from kraken_api_keys.json
+    Load encrypted API credentials from persistent storage
     """
-    api_file = 'kraken_api_keys.json'
+    api_file = os.path.join(PERSISTENT_DATA_DIR, 'config', 'kraken_api_keys.json')
     if not os.path.exists(api_file):
         return None, None
     with open(api_file, 'r') as f:
         api_data = json.load(f)
     return api_data.get("KRAKEN_API_KEY"), api_data.get("KRAKEN_API_SECRET")
+
+def check_credentials():
+    """
+    Check if API credentials are configured
+    """
+    try:
+        encrypted_key, encrypted_secret = load_encrypted_credentials()
+        if encrypted_key and encrypted_secret:
+            # Try to decrypt to verify they work
+            secret_key_path = os.path.join(PERSISTENT_DATA_DIR, 'config', 'secret.key')
+            api_key = kraken.decrypt_message(encrypted_key, secret_key_path)
+            api_secret = kraken.decrypt_message(encrypted_secret, secret_key_path)
+            are_credentials_valid = test_kraken_credentials(api_key, api_secret)
+            if are_credentials_valid:
+                return True, "Credentials configured and valid"
+            else:
+                return False, "Invalid API credentials. Please check your API key and secret."
+        else:
+            return False, "No credentials found"
+    except Exception as e:
+        logger.error(f"Error checking credentials: {str(e)}")
+        return False, f"Error validating credentials: {str(e)}"
 
 def test_kraken_credentials(api_key, api_secret):
     """
@@ -124,48 +159,38 @@ def setup_credentials():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/check-credentials', methods=['GET'])
-def check_credentials():
+def check_credentials_endpoint():
     """
     API endpoint to check if credentials are configured
     """
     try:
-        encrypted_key, encrypted_secret = load_encrypted_credentials()
-        if not encrypted_key or not encrypted_secret:
-            return jsonify({
-                'success': True,
-                'configured': False,
-                'message': 'No API credentials configured'
-            })
-        # Try to decrypt and use the credentials
-        try:
-            api_key = kraken.decrypt_message(encrypted_key)
-            api_secret = kraken.decrypt_message(encrypted_secret)
-            # Optionally, test with a lightweight Kraken call here
-            return jsonify({
-                'success': True,
-                'configured': True,
-                'message': 'API credentials are configured and valid'
-            })
-        except Exception as e:
-            return jsonify({
-                'success': True,
-                'configured': False,
-                'message': 'API credentials are configured but invalid'
-            })
+        result, message = check_credentials()
+        return jsonify({
+            'valid': result,
+            'message': message
+        })
     except Exception as e:
-        logger.error(f"Error in check_credentials: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"Error in check_credentials_endpoint: {str(e)}")
+        return jsonify({'valid': False, 'error': str(e)}), 500
 
 def calculate_taxes_api():
     """
     Main function to calculate crypto taxes - converted from main.py
     """
     try:
+        ensure_persistent_dirs()
+        
         reference_asset = "ZEUR"
         exception_assets = ["KFEE","NFT"]
         encrypted_key, encrypted_secret = load_encrypted_credentials()
-        api_key = kraken.decrypt_message(encrypted_key)
-        api_sec = kraken.decrypt_message(encrypted_secret)
+        
+        if not encrypted_key or not encrypted_secret:
+            return {'success': False, 'error': 'API credentials not configured'}
+        
+        secret_key_path = os.path.join(PERSISTENT_DATA_DIR, 'config', 'secret.key')
+        api_key = kraken.decrypt_message(encrypted_key, secret_key_path)
+        api_sec = kraken.decrypt_message(encrypted_secret, secret_key_path)
+        logger.info("Decrypted API credentials")
         start_date = "2021-01-01"
         
         response = kraken.get_ledger(start_date, 0, api_key, api_sec)
@@ -173,11 +198,8 @@ def calculate_taxes_api():
         
         # Get all ledger data
         start_timestamp = datetime.strptime(start_date, "%Y-%m-%d")
-        filename = "data/kraken_ledger.parquet"
+        filename = os.path.join(PERSISTENT_DATA_DIR, "data", "kraken_ledger.parquet")
         ledger_df = pd.DataFrame([])
-        
-        # Ensure data directory exists
-        os.makedirs("data", exist_ok=True)
         
         # Read data from file
         try:
@@ -242,13 +264,13 @@ def calculate_taxes_api():
         
         # All sell
         ledger_df_trade_sell = ledger_df_trade[ledger_df_trade["assetnorm_to"] == reference_asset]
-        ledger_df_trade_sell = ledger_df_trade_sell.rename(columns={'justdate_to': 'date', 'decimalamount_to': 'total', 'decimalamount_from': 'quantity', 'assetnorm_from': 'cryptocur', 'date_to': 'datetime'})
-        ledger_df_trade_sell = ledger_df_trade_sell[["date","total","quantity","cryptocur","datetime"]]
+        ledger_df_trade_sell = ledger_df_trade_sell.rename(columns={'justdate_to': 'date', 'decimalamount_to': 'total', 'decimalamount_from': 'quantity', 'assetnorm_from': 'asset', 'date_to': 'datetime'})
+        ledger_df_trade_sell = ledger_df_trade_sell[["date","total","quantity","asset","datetime"]]
 
         # All buy
         ledger_df_trade_buy = ledger_df_trade[ledger_df_trade["assetnorm_from"] == reference_asset]
-        ledger_df_trade_buy = ledger_df_trade_buy.rename(columns={'justdate_to': 'date', 'decimalamount_from': 'total', 'decimalamount_to': 'quantity', 'assetnorm_to': 'cryptocur', 'date_to': 'datetime'})
-        ledger_df_trade_buy = ledger_df_trade_buy[["date","total","quantity","cryptocur","datetime"]]
+        ledger_df_trade_buy = ledger_df_trade_buy.rename(columns={'justdate_to': 'date', 'decimalamount_from': 'total', 'decimalamount_to': 'quantity', 'assetnorm_to': 'asset', 'date_to': 'datetime'})
+        ledger_df_trade_buy = ledger_df_trade_buy[["date","total","quantity","asset","datetime"]]
 
         # Compute price
         ledger_df_trade_final = pd.concat([ledger_df_trade_sell, ledger_df_trade_buy], ignore_index=False)
@@ -257,88 +279,21 @@ def calculate_taxes_api():
 
         # Get OHLC data
         logger.info("Fetching OHLC data with persistence...")
-        OHLC_df = kraken.get_ohlc_data_with_persistence(
-            assets_in_portfolio=assets_in_portfolio,
-            reference_asset=reference_asset,
-            exception_assets=exception_assets,
-            start_date=start_date
-        )
+        ohlc_df = kraken.get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset, exception_assets, start_date)
         
-        # Get balance data
-        balance_df = kraken.get_balance_dataframe(api_key, api_sec)
-        balance_df = balance_df.reset_index(names=['asset'])
-        balance_df = kraken.normalize_assets_name(balance_df, "asset")
-        balance_df["balance"] = balance_df.apply(lambda row: kraken.decimal_from_value(row["balance"]), axis=1)
-        balance_df = balance_df[["balance","assetnorm"]]
-        balance_df = balance_df.groupby(['assetnorm']).sum()
-
-        # Calculate year-end balances
-        kraken.calculate_year_end_balances(ledger_df, OHLC_df, reference_asset, exception_assets)
-
-        # Compute taxes
-        ledger_out_df3, gains_final_df = kraken.compute_taxes(ledger_df_trade_final)
-        
-        # Group by year and asset for tax calculation
-        gains_by_year_asset = gains_final_df.groupby(['year','asset']).sum()
-        gains_by_year = gains_final_df.groupby(['year']).sum()
-
-        # Apply taxes with 2024 franchigia
-        gains_by_year["taxes"] = gains_by_year.apply(
-            lambda row: kraken.calculate_taxes_with_franchigia(row["gain"], row.name) if row.name == 2024 
-            else row["gain"] * Decimal(0.26), 
-            axis=1
-        )
-        
-        # Convert DataFrames to JSON-serializable format
-        def decimal_to_float(obj):
-            if isinstance(obj, Decimal):
-                return float(obj)
-            return obj
-        
-        # Convert gains data
-        gains_by_year_json = gains_by_year.reset_index().to_dict('records')
-        gains_by_year_asset_json = gains_by_year_asset.reset_index().to_dict('records')
-        
-        # Convert transaction data
-        ledger_df_trade_final_json = ledger_df_trade_final.reset_index().to_dict('records')
-        
-        # Convert balance data
-        balance_df_json = balance_df.reset_index().to_dict('records')
-        
-        # Apply decimal conversion
-        for record in gains_by_year_json:
-            for key, value in record.items():
-                record[key] = decimal_to_float(value)
-        
-        for record in gains_by_year_asset_json:
-            for key, value in record.items():
-                record[key] = decimal_to_float(value)
-        
-        for record in ledger_df_trade_final_json:
-            for key, value in record.items():
-                record[key] = decimal_to_float(value)
-        
-        for record in balance_df_json:
-            for key, value in record.items():
-                record[key] = decimal_to_float(value)
+        # Calculate taxes
+        logger.info("Calculating taxes...")
+        tax_results = kraken.calculate_italian_crypto_taxes_2025(ledger_df_trade_final, api_key, api_sec, ohlc_df)
         
         return {
             'success': True,
-            'gains_by_year': gains_by_year_json,
-            'gains_by_year_asset': gains_by_year_asset_json,
-            'transactions': ledger_df_trade_final_json,
-            'balance': balance_df_json,
-            'total_transactions': len(ledger_df_trade_final_json),
-            'assets_in_portfolio': list(assets_in_portfolio),
-            'operation_types': list(operation_types)
+            'message': 'Tax calculation completed successfully',
+            'tax_summary': tax_results
         }
         
     except Exception as e:
         logger.error(f"Error in calculate_taxes_api: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e)}
 
 @app.route('/api/calculate-taxes', methods=['POST'])
 def calculate_taxes_endpoint():
@@ -346,7 +301,7 @@ def calculate_taxes_endpoint():
     API endpoint to calculate crypto taxes
     """
     try:
-        logger.info("Calculating taxes...")
+        logger.info("Called calculate_taxes_endpoint")
         result = calculate_taxes_api()
         return jsonify(result)
     except Exception as e:
@@ -359,16 +314,16 @@ def get_transactions():
     API endpoint to get transaction data
     """
     try:
-        filename = "data/kraken_ledger.parquet"
+        filename = os.path.join(PERSISTENT_DATA_DIR, "data", "kraken_ledger.parquet")
         if os.path.exists(filename):
             ledger_df = pd.read_parquet(filename, engine="fastparquet")
             transactions = ledger_df.to_dict('records')
-            return jsonify({'success': True, 'transactions': transactions})
+            return jsonify({'valid': True, 'transactions': transactions})
         else:
-            return jsonify({'success': False, 'error': 'No transaction data found'})
+            return jsonify({'valid': False, 'error': 'No transaction data found'})
     except Exception as e:
         logger.error(f"Error in get_transactions: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'valid': False, 'error': str(e)}), 500
 
 @app.route('/api/balance', methods=['GET'])
 def get_balance():
@@ -376,10 +331,10 @@ def get_balance():
     API endpoint to get current balance
     """
     try:
-        logger.info("get_balance")
         encrypted_key, encrypted_secret = load_encrypted_credentials()
-        api_key = kraken.decrypt_message(encrypted_key)
-        api_sec = kraken.decrypt_message(encrypted_secret)
+        secret_key_path = os.path.join(PERSISTENT_DATA_DIR, 'config', 'secret.key')
+        api_key = kraken.decrypt_message(encrypted_key, secret_key_path)
+        api_sec = kraken.decrypt_message(encrypted_secret, secret_key_path)
         balance_df = kraken.get_balance_dataframe(api_key, api_sec)
         balance_df = balance_df.reset_index(names=['asset'])
         balance_df = kraken.normalize_assets_name(balance_df, "asset")

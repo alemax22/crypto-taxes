@@ -15,9 +15,7 @@ const Dashboard = () => {
   const checkCredentialsStatus = useCallback(async () => {
     try {
       const response = await axios.get('/api/check-credentials');
-      if (response.data.success) {
-        setCredentialsConfigured(response.data.configured);
-      }
+      setCredentialsConfigured(response.data.valid);
     } catch (err) {
       console.error('Failed to check credentials status:', err);
     }

@@ -23,39 +23,37 @@ def decimal_from_value(value):
 def decimal_sum(value1, value2):
     return Decimal(value1) + Decimal(value2)
 
-def generate_key():
+def generate_key(key_path="secret.key"):
     """
-    Generates a key and save it into a file
+    Generates a new encryption key and saves it to the specified path.
     """
     key = Fernet.generate_key()
-    with open("secret.key", "wb") as key_file:
+    with open(key_path, "wb") as key_file:
         key_file.write(key)
-        
-def load_key():
-    """
-    Loads the key named `secret.key` from the current directory.
-    """
-    return open("secret.key", "rb").read()
+    return key
 
-def encrypt_message(message):
+def load_key(key_path="secret.key"):
     """
-    Encrypts a message
+    Loads the key from the specified path.
     """
-    key = load_key()
-    encoded_message = message.encode()
+    return open(key_path, "rb").read()
+
+def encrypt_message(message, key_path="secret.key"):
+    """
+    Encrypts a message using the key stored at the specified path.
+    """
+    key = load_key(key_path)
     f = Fernet(key)
-    encrypted_message = f.encrypt(encoded_message)
-
+    encrypted_message = f.encrypt(message.encode())
     return encrypted_message
-    
-def decrypt_message(encrypted_message):
-    """
-    Decrypts an encrypted message
-    """
-    key = load_key()
-    f = Fernet(key)
-    decrypted_message = f.decrypt(encrypted_message)
 
+def decrypt_message(encrypted_message, key_path="secret.key"):
+    """
+    Decrypts a message using the key stored at the specified path.
+    """
+    key = load_key(key_path)
+    f = Fernet(key)
+    decrypted_message = f.decrypt(encrypted_message.encode() if isinstance(encrypted_message, str) else encrypted_message)
     return decrypted_message.decode()
 
 def get_kraken_api_key():
@@ -115,15 +113,15 @@ def totimestamp(date):
     return unix_int
 
 # Get stakable assets
-def get_stakeable_assets():
+def get_stakeable_assets(api_key, api_sec):
     resp_stak_assets = kraken_request('/0/private/Earn/Strategies', {
-            "nonce": str(int(1000*time.time()))
+            "nonce": str(int(1_000_000*time.time()))
         }, get_kraken_api_key(), get_kraken_api_sec())
     return resp_stak_assets.json() 
 
 # Create asset conversion matrix
-def create_asset_conversion_matrix():
-    stak_response_json = get_stakeable_assets()
+def create_asset_conversion_matrix(api_key, api_sec):
+    stak_response_json = get_stakeable_assets(api_key, api_sec)
     stakeable_asset_df = pd.DataFrame(stak_response_json["result"]["items"])
     stakeable_asset_df = stakeable_asset_df[["asset","id"]].set_index("id")
     return stakeable_asset_df
@@ -173,7 +171,7 @@ def create_tradable_asset_matrix():
 def get_ledger(start_date, ofs, api_key, api_sec, without_count = "false"):
     start_timestamp = totimestamp(start_date)
     resp_ledger = kraken_request('/0/private/Ledgers', {
-            "nonce": str(int(1000*time.time())),
+            "nonce": str(int(1_000_000*time.time())),
             "start": start_timestamp,
             "ofs": ofs,
             "without_count": without_count
@@ -234,33 +232,98 @@ def get_balance_dataframe(api_key, api_sec):
         print(response_json["error"])
     return balance_df
 
-def normalize_assets_name(df, asset_column_name, log_message=False):
+def normalize_assets_name(df, asset_column_name, api_key=None, api_sec=None, log_message=False):
+    """
+    Normalize asset names in a DataFrame using Kraken API data.
+    
+    Args:
+        df: DataFrame containing asset data
+        asset_column_name: Name of the column containing asset identifiers
+        api_key: Kraken API key (optional, will be loaded from storage if not provided)
+        api_sec: Kraken API secret (optional, will be loaded from storage if not provided)
+        log_message: Whether to print debug messages
+    
+    Returns:
+        DataFrame with normalized asset names in 'assetnorm' column
+    """
     # Get all assets keys in the portfolio
     assets_in_portofolio = df[asset_column_name].unique()
     if log_message:
         print("All assets:")
         print(assets_in_portofolio)
 
+    # Load API credentials if not provided
+    if api_key is None or api_sec is None:
+        try:
+            encrypted_key, encrypted_secret = load_encrypted_credentials()
+            if encrypted_key and encrypted_secret:
+                secret_key_path = '/app/persistent_data/config/secret.key'
+                api_key = decrypt_message(encrypted_key, secret_key_path)
+                api_sec = decrypt_message(encrypted_secret, secret_key_path)
+                if log_message:
+                    print("API credentials loaded from persistent storage")
+            else:
+                if log_message:
+                    print("Warning: No API credentials found, using basic normalization only")
+                # Fall back to basic normalization without API data
+                return _basic_normalize_assets_name(df, asset_column_name, log_message)
+        except Exception as e:
+            if log_message:
+                print(f"Warning: Could not load API credentials: {e}")
+                print("Using basic normalization only")
+            # Fall back to basic normalization without API data
+            return _basic_normalize_assets_name(df, asset_column_name, log_message)
+
     # Create a conversion matrix for the staked cryptos
-    conv_matrix_df = create_asset_conversion_matrix()
+    try:
+        conv_matrix_df = create_asset_conversion_matrix(api_key, api_sec)
+        
+        # Normalize the asset keys
+        df["assetnorm"] = df[asset_column_name]
+        for index, row in conv_matrix_df.iterrows():
+            df.loc[(df[asset_column_name] == index), "assetnorm"] = row[asset_column_name]
+    except Exception as e:
+        if log_message:
+            print(f"Warning: Could not create conversion matrix: {e}")
+            print("Using basic normalization only")
+        # Fall back to basic normalization without API data
+        return _basic_normalize_assets_name(df, asset_column_name, log_message)
 
-    # Normalize the asset keys
-    df["assetnorm"] = df[asset_column_name]
-    for index, row in conv_matrix_df.iterrows():
-        df.loc[(df[asset_column_name] == index), "assetnorm"] = row[asset_column_name]
-
-    # Fix remaining asset name manually 
-    df["assetnorm"] = df["assetnorm"].str.split('.').str[0]
-    df["assetnorm"] = df["assetnorm"].str.split('21').str[0]
-    df.loc[(df["assetnorm"]=="EUR"),["assetnorm"]] = "ZEUR"
-    df.loc[(df["assetnorm"]=="XBT"),["assetnorm"]] = "XXBT"
-    df.loc[(df["assetnorm"]=="ETH"),["assetnorm"]] = "XETH"
+    # Apply basic normalization rules
+    df = _apply_basic_normalization_rules(df)
 
     # Normalized asset list
     assets_in_portofolio = df["assetnorm"].unique()
     if log_message:
         print("Normalized assets:")
         print(assets_in_portofolio)
+    return df
+
+def _basic_normalize_assets_name(df, asset_column_name, log_message=False):
+    """
+    Basic asset name normalization without API data.
+    """
+    df["assetnorm"] = df[asset_column_name]
+    df = _apply_basic_normalization_rules(df)
+    
+    if log_message:
+        print("Basic normalization applied (no API data)")
+        print("Normalized assets:")
+        print(df["assetnorm"].unique())
+    
+    return df
+
+def _apply_basic_normalization_rules(df):
+    """
+    Apply basic normalization rules to asset names.
+    """
+    # Fix remaining asset name manually 
+    df["assetnorm"] = df["assetnorm"].str.split('.').str[0]
+    df["assetnorm"] = df["assetnorm"].str.split('21').str[0]
+    df.loc[(df["assetnorm"]=="EUR"),["assetnorm"]] = "ZEUR"
+    df.loc[(df["assetnorm"]=="XBT"),["assetnorm"]] = "XXBT"
+    df.loc[(df["assetnorm"]=="ETH"),["assetnorm"]] = "XETH"
+    
     return df
 
 # INPUT: Ledger with trades (without sells), and simulation_df
@@ -291,7 +354,7 @@ def get_ledger_after_tax_computation(input_ledger_df, input_quantity_to_sell_df)
         if remaining_quantity_to_be_sold > 0:
             # Filter ledger to only include transactions before the sell datetime
             valid_ledger_df = ledger_out_df[
-                (ledger_out_df["cryptocur"] == asset) & 
+                (ledger_out_df["asset"] == asset) & 
                 (ledger_out_df["datetime"] < input_row["datetime"]) &
                 (ledger_out_df["isvalid"])
             ].copy()
@@ -372,7 +435,7 @@ def compute_taxes(input_ledger_df):
     # Get all the sell transactions
     input_quantity_already_sold_df = input_ledger_sim_df[input_ledger_sim_df["quantity"]<0].copy()
     input_quantity_already_sold_df["quantity"] = input_quantity_already_sold_df["quantity"] *-1
-    input_quantity_already_sold_df = input_quantity_already_sold_df.set_index("cryptocur")
+    input_quantity_already_sold_df = input_quantity_already_sold_df.set_index("asset")
     input_quantity_already_sold_df.sort_values(by=['datetime'], ascending=True, inplace=True)
     input_quantity_already_sold_df = input_quantity_already_sold_df[["price","total","quantity","datetime"]]
 
@@ -409,8 +472,8 @@ def calculate_year_end_balances(ledger_df, OHLC_df, reference_asset="ZEUR", exce
         balance_by_asset = {}
         
         for _, row in ledger_until_year_end.iterrows():
-            asset = row['assetnorm']
-            amount = row['decimalamount']
+            asset = row['asset']
+            amount = row['quantity']
             
             if asset not in balance_by_asset:
                 balance_by_asset[asset] = Decimal(0)
@@ -497,12 +560,13 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
         DataFrame with MultiIndex (date, crypto) and 'price' column
     """
     
-    
-    filename = "data/kraken_ohlc.parquet"
+    # Use persistent data directory
+    persistent_data_dir = '/app/persistent_data'
+    filename = os.path.join(persistent_data_dir, "data", "kraken_ohlc.parquet")
     tradable_asset_pair = create_tradable_asset_matrix()
     
     # Ensure data directory exists
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     
     # Add MATIC/POL mapping
     new_row_data = {
@@ -595,7 +659,7 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
                 
                 # Check if we need to fetch new data (avoid calls for very recent timestamps)
                 current_time = datetime.now().timestamp()
-                min_interval_seconds = 1440 * 60 * 2 # 2 * 1440 minutes in seconds
+                min_interval_seconds = 1440 * 60 * 2
                 
                 if latest_timestamp is not None and (current_time - latest_timestamp) < min_interval_seconds:
                     print(f"Skipping {asset} - latest data is too recent (less than 1440 minutes ago)")
@@ -660,30 +724,8 @@ def get_ohlc_data_with_persistence(assets_in_portfolio, reference_asset="ZEUR", 
         combined_df.to_parquet(filename, engine="fastparquet", compression="GZIP")
         print(f"Saved OHLC data to {filename}")
     
-    # # Check that the distance between every sample of the same asset is 1440 minutes
-    # for asset in combined_df.index.get_level_values('crypto').unique():
-    #     asset_data = combined_df.xs(asset, level='crypto')
-    #     if not asset_data.empty:
-    #         # Sort by timestamp before checking intervals
-    #         asset_data = asset_data.sort_values('timestamp')
-    #         # Get the difference between consecutive timestamps
-    #         time_diffs = asset_data['timestamp'].diff().dropna()
-    #         # Check if all differences are 1440 minutes (1440 * 60 seconds)
-    #         if not (time_diffs == 1440 * 60).all():
-    #             print(f"WARNING: {asset} has non-1440 minute intervals")
-    #             # Print all samples with different intervals
-    #             non_standard_intervals = time_diffs[time_diffs != 1440 * 60]
-    #             for idx, interval in non_standard_intervals.items():
-    #                 interval_minutes = interval / 60
-    #                 print(f"  {asset}: timestamp {idx} has interval of {interval_minutes:.0f} minutes")
-
     print(f"Combined data: {combined_df.shape[0]} records")
-
-    # Return only the price column for compatibility with existing code
-    if not combined_df.empty:
-        return combined_df[['price']]
-    else:
-        return combined_df
+    return combined_df
 
 def calculate_taxes_with_franchigia(gain, year):
     """
@@ -704,6 +746,94 @@ def calculate_taxes_with_franchigia(gain, year):
             taxable_amount = gain + 2000
         
         return taxable_amount * Decimal(0.26)
+
+def calculate_italian_crypto_taxes_2025(ledger_df_trade_final, api_key, api_sec, ohlc_df):
+    """
+    Calculate Italian crypto taxes for 2025 with all the required logic
+    """
+    try:
+        # Get balance data
+        balance_df = get_balance_dataframe(api_key, api_sec)
+        balance_df = balance_df.reset_index(names=['asset'])
+        balance_df = normalize_assets_name(balance_df, "asset")
+        balance_df["balance"] = balance_df.apply(lambda row: decimal_from_value(row["balance"]), axis=1)
+        balance_df = balance_df[["balance","assetnorm"]]
+        balance_df = balance_df.groupby(['assetnorm']).sum()
+        
+        # Calculate year-end balances
+        year_summary = calculate_year_end_balances(ledger_df_trade_final, ohlc_df, "ZEUR", ["KFEE","NFT"])
+
+        # Compute taxes
+        ledger_out_df3, gains_final_df = compute_taxes(ledger_df_trade_final)
+        
+        # Group by year and asset for tax calculation
+        gains_by_year_asset = gains_final_df.groupby(['year','asset']).sum()
+        gains_by_year = gains_final_df.groupby(['year']).sum()
+
+        # Apply taxes with 2024 franchigia
+        gains_by_year["taxes"] = gains_by_year.apply(
+            lambda row: calculate_taxes_with_franchigia(row["gain"], row.name) if row.name == 2024 
+            else row["gain"] * Decimal(0.26), 
+            axis=1
+        )
+        
+        # Convert DataFrames to JSON-serializable format
+        def decimal_to_float(obj):
+            if isinstance(obj, Decimal):
+                return float(obj)
+            return obj
+        
+        # Convert gains data
+        gains_by_year_json = gains_by_year.reset_index().to_dict('records')
+        gains_by_year_asset_json = gains_by_year_asset.reset_index().to_dict('records')
+        
+        # Convert transaction data
+        ledger_df_trade_final_json = ledger_df_trade_final.reset_index().to_dict('records')
+        
+        # Convert balance data
+        balance_df_json = balance_df.reset_index().to_dict('records')
+        
+        # Apply decimal conversion
+        for record in gains_by_year_json:
+            for key, value in record.items():
+                record[key] = decimal_to_float(value)
+        
+        for record in gains_by_year_asset_json:
+            for key, value in record.items():
+                record[key] = decimal_to_float(value)
+        
+        for record in ledger_df_trade_final_json:
+            for key, value in record.items():
+                record[key] = decimal_to_float(value)
+        
+        for record in balance_df_json:
+            for key, value in record.items():
+                record[key] = decimal_to_float(value)
+        
+        return {
+            'gains_by_year': gains_by_year_json,
+            'gains_by_year_asset': gains_by_year_asset_json,
+            'transactions': ledger_df_trade_final_json,
+            'balance': balance_df_json,
+            'total_transactions': len(ledger_df_trade_final_json),
+            'assets_in_portfolio': list(balance_df.index),
+            'operation_types': list(ledger_df_trade_final['type'].unique()) if 'type' in ledger_df_trade_final.columns else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in calculate_italian_crypto_taxes_2025: {str(e)}")
+        raise e
+
+def load_encrypted_credentials():
+    """
+    Load encrypted API credentials from persistent storage
+    """
+    api_file = '/app/persistent_data/config/kraken_api_keys.json'
+    if not os.path.exists(api_file):
+        return None, None
+    with open(api_file, 'r') as f:
+        api_data = json.load(f)
+    return api_data.get("KRAKEN_API_KEY"), api_data.get("KRAKEN_API_SECRET")
 
 if __name__ == "__main__":
     # Call the get_ohlc_data_with_persistence function with the assets in the portfolio

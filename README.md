@@ -1,42 +1,17 @@
 # Italian Crypto Tax Calculator 2025
 
-A comprehensive web application for calculating Italian crypto taxes according to 2025 regulations, with support for Kraken API integration.
+A comprehensive crypto tax calculation tool for Italian residents, specifically designed for 2025 tax regulations. This application connects to the Kraken API, downloads user transactions, and computes taxes according to Italian crypto tax laws.
 
 ## Features
 
-- **Automated Tax Calculation**: Computes crypto taxes according to Italian 2025 regulations
-- **Kraken API Integration**: Direct connection to Kraken for transaction data
-- **Secure API Key Management**: Encrypted storage of API credentials with persistence
-- **Interactive Dashboard**: Real-time visualization of tax data and portfolio balance
-- **Transaction History**: Detailed view of all trading activities
-- **Tax Summary**: Year-by-year breakdown of gains, losses, and taxes
-- **Portfolio Balance**: Current holdings across all assets
-- **Docker Support**: Fully containerized application for easy deployment
-
-## API Key Management
-
-The application includes a secure API key management system:
-
-- **Encrypted Storage**: API credentials are encrypted using the application's encryption system
-- **Persistence**: Credentials persist across application restarts
-- **Validation**: Automatic testing of API credentials before saving
-- **User Interface**: Easy-to-use web interface for configuration
-
-### Required Kraken API Permissions
-
-Your Kraken API key needs the following permissions:
-- **Query Funds** - To check balances
-- **Query Open Orders & Trades** - To download transaction history  
-- **Query Ledgers** - To download deposit/withdrawal history
+- **Kraken API Integration**: Secure connection to Kraken API for transaction data
+- **Italian Tax Compliance**: Implements 2025 Italian crypto tax regulations
+- **Encrypted Storage**: API credentials encrypted and stored securely
+- **Web Interface**: Modern React frontend with real-time data visualization
+- **Docker Support**: Fully containerized application
+- **Persistent Data**: All data stored in a single Docker volume
 
 ## Quick Start with Docker
-
-### Prerequisites
-
-- Docker Desktop installed and running
-- Kraken API credentials (optional for initial setup)
-
-### Running the Application
 
 1. **Clone the repository**:
    ```bash
@@ -45,15 +20,8 @@ Your Kraken API key needs the following permissions:
    ```
 
 2. **Start the application**:
-   
-   **On Windows:**
-   ```cmd
-   run-docker.bat
-   ```
-   
-   **On Linux/Mac:**
    ```bash
-   ./run-docker.sh
+   docker-compose up --build -d
    ```
 
 3. **Access the application**:
@@ -67,6 +35,42 @@ Your Kraken API key needs the following permissions:
 5. **Calculate taxes**:
    - Once credentials are configured, click "Calculate Taxes"
    - The application will fetch your data from Kraken and compute taxes
+
+## Data Migration (For Existing Users)
+
+If you have existing data from a previous version, you can migrate it to the new persistent volume structure:
+
+### Automatic Migration
+
+**On Windows:**
+```cmd
+run-migration.bat
+```
+
+**On Linux/Mac:**
+```bash
+chmod +x run-migration.sh
+./run-migration.sh
+```
+
+### Manual Migration
+
+1. **Start the application**:
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Run the migration script**:
+   ```bash
+   docker exec crypto-taxes-app python migrate_data.py
+   ```
+
+3. **Restart the application**:
+   ```bash
+   docker-compose restart
+   ```
+
+The migration will preserve all your existing data while moving it to the new persistent volume structure.
 
 ## Manual Setup
 
@@ -132,11 +136,13 @@ Your Kraken API key needs the following permissions:
 
 ## Data Persistence
 
-The application stores data in the following locations:
-- **Transaction data**: `data/kraken_ledger.parquet`
-- **OHLC data**: `kraken_historical_ohlc_data/`
-- **API credentials**: `.env` (encrypted)
-- **Logs**: `logs/`
+The application uses a single Docker volume for all persistent data:
+
+- **Transaction data**: `/app/persistent_data/data/kraken_ledger.parquet`
+- **OHLC data**: `/app/persistent_data/data/kraken_ohlc.parquet`
+- **API credentials**: `/app/persistent_data/config/kraken_api_keys.json` (encrypted)
+- **Encryption key**: `/app/persistent_data/config/secret.key`
+- **Logs**: `/app/persistent_data/logs/`
 
 ## Tax Calculation Details
 
@@ -152,7 +158,7 @@ The application implements Italian crypto tax regulations for 2025:
 - **Encrypted API Storage**: Credentials encrypted using Fernet encryption
 - **Secure Environment**: Docker containerization for isolation
 - **No Plain Text**: API secrets never stored in plain text
-- **Persistent Security**: Encryption key stored in `secret.key`
+- **Persistent Security**: Encryption key stored in persistent volume
 
 ## Troubleshooting
 
@@ -174,8 +180,7 @@ docker-compose logs -f
 
 To reset all data and start fresh:
 ```bash
-docker-compose down
-rm -rf data/ logs/ .env
+docker-compose down -v
 docker-compose up --build -d
 ```
 
@@ -192,9 +197,8 @@ crypto-taxes/
 │   │   ├── components/   # React components
 │   │   └── pages/        # Page components
 │   └── public/
-├── data/                 # Data storage
-├── logs/                 # Application logs
-└── docker-compose.yml    # Docker configuration
+├── docker-compose.yml    # Docker configuration
+└── Dockerfile           # Multi-stage Docker build
 ```
 
 ### Contributing
@@ -207,7 +211,7 @@ crypto-taxes/
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Disclaimer
 
