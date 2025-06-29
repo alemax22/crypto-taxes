@@ -23,7 +23,7 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
+ENV FLASK_APP=backend/app.py
 ENV FLASK_ENV=production
 
 # Set working directory
@@ -44,11 +44,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the built React app from the frontend stage
 COPY --from=frontend-builder /app/frontend/build ./frontend/build
 
-# Copy Python application files
-COPY app.py .
-COPY kraken.py .
-COPY config.py .
-COPY setup_encryption.py .
+# Copy Python application files to backend directory
+COPY backend/ ./backend/
 
 # Create persistent data directory structure
 RUN mkdir -p /app/persistent_data/data \
@@ -70,4 +67,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/api/health || exit 1
 
 # Run the application
-CMD ["python", "app.py"] 
+CMD ["python", "backend/app.py"] 

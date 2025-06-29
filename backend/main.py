@@ -27,7 +27,7 @@ def main():
     # Get all ledger data
     # Retrive the local copy of the data
     start_timestamp = datetime.strptime(start_date, "%Y-%m-%d")
-    filename = "kraken_ledger.parquet"
+    filename = "../kraken_ledger.parquet"
     ledger_df = pd.DataFrame([])
     # Read data from file
     try:

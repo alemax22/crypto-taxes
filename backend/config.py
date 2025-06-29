@@ -19,12 +19,7 @@ EXEMPTION_THRESHOLD = 2000
 # Minimum holding period for long-term gains (in days)
 LONG_TERM_HOLDING_PERIOD = 365
 
-# Kraken API settings
-KRAKEN_API_SETTINGS = {
-    'base_url': 'https://api.kraken.com', 
-    'api_version': '0',
-    'timeout': 30
-}
+
 
 # Tax calculation settings
 TAX_CALCULATION_SETTINGS = {

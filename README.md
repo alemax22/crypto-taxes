@@ -36,42 +36,6 @@ A comprehensive crypto tax calculation tool for Italian residents, specifically 
    - Once credentials are configured, click "Calculate Taxes"
    - The application will fetch your data from Kraken and compute taxes
 
-## Data Migration (For Existing Users)
-
-If you have existing data from a previous version, you can migrate it to the new persistent volume structure:
-
-### Automatic Migration
-
-**On Windows:**
-```cmd
-run-migration.bat
-```
-
-**On Linux/Mac:**
-```bash
-chmod +x run-migration.sh
-./run-migration.sh
-```
-
-### Manual Migration
-
-1. **Start the application**:
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Run the migration script**:
-   ```bash
-   docker exec crypto-taxes-app python migrate_data.py
-   ```
-
-3. **Restart the application**:
-   ```bash
-   docker-compose restart
-   ```
-
-The migration will preserve all your existing data while moving it to the new persistent volume structure.
-
 ## Manual Setup
 
 ### Prerequisites
@@ -89,7 +53,7 @@ The migration will preserve all your existing data while moving it to the new pe
 
 2. **Set up encryption**:
    ```bash
-   python setup_encryption.py
+   python backend/setup_encryption.py
    ```
 
 3. **Configure environment variables**:
@@ -116,7 +80,7 @@ The migration will preserve all your existing data while moving it to the new pe
 
 1. **Start the Flask backend**:
    ```bash
-   python app.py
+   python backend/app.py
    ```
 
 2. **Access the application**:
@@ -189,9 +153,13 @@ docker-compose up --build -d
 ### Project Structure
 ```
 crypto-taxes/
-├── app.py                 # Flask backend
-├── kraken.py             # Kraken API integration
-├── main.py               # Original CLI script
+├── backend/              # Python backend files
+│   ├── app.py           # Flask backend
+│   ├── kraken.py        # Kraken API integration
+│   ├── main.py          # Original CLI script
+│   ├── config.py        # Configuration settings
+│   ├── setup_encryption.py # Encryption setup
+│   └── test_secret_generation.py # Test utilities
 ├── frontend/             # React frontend
 │   ├── src/
 │   │   ├── components/   # React components
