@@ -54,14 +54,8 @@ class KrakenWallet(Wallet):
         # Data file paths
         self.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")
         self.ohlc_file = os.path.join(self.persistent_data_dir, "data", "kraken_ohlc.parquet")
-        self.api_keys_file = os.path.join(self.persistent_data_dir, "config", "kraken_api_keys.json")
-        self.secret_key_file = os.path.join(self.persistent_data_dir, "config", "secret.key")
         
         logger.info("Kraken wallet initialized")
-    
-    # ============================================================================
-    # AUTHENTICATION METHODS
-    # ============================================================================
     
     def authenticate(self) -> bool:
         """
@@ -79,7 +73,7 @@ class KrakenWallet(Wallet):
                 return self.is_authenticated
             
             # Test authentication by getting balance
-            test_start_date = datetime.now() - timedelta(days=1)
+            test_start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             ledger_response = self._get_ledger(test_start_date, ofs=0)
             
             if 'error' in ledger_response and ledger_response['error']:
@@ -93,49 +87,7 @@ class KrakenWallet(Wallet):
         except Exception as e:
             logger.error(f"Kraken authentication error: {str(e)}")
             return self.is_authenticated
-    
-    def load_credentials_from_storage(self) -> bool:
-        """
-        Load credentials from persistent storage.
-        
-        Returns:
-            bool: True if credentials loaded successfully, False otherwise
-        """
-        try:
-            if not os.path.exists(self.api_keys_file):
-                logger.warning("API keys file not found")
-                return False
-            
-            if not os.path.exists(self.secret_key_file):
-                logger.warning("Secret key file not found")
-                return False
-            
-            # Load encrypted credentials
-            with open(self.api_keys_file, 'r') as f:
-                api_data = json.load(f)
-            
-            encrypted_key = api_data.get("KRAKEN_API_KEY")
-            encrypted_secret = api_data.get("KRAKEN_API_SECRET")
-            
-            if not encrypted_key or not encrypted_secret:
-                logger.warning("Encrypted credentials not found in file")
-                return False
-            
-            # Decrypt credentials
-            self.api_key = self._decrypt_message(encrypted_key, self.secret_key_file)
-            self.api_secret = self._decrypt_message(encrypted_secret, self.secret_key_file)
-            
-            logger.info("Credentials loaded from storage successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error loading credentials from storage: {str(e)}")
-            return False
-    
-    # ============================================================================
-    # CORE WALLET METHODS
-    # ============================================================================
-    
+
     def synchronize(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
         """
         Synchronize local data with Kraken exchange.
@@ -150,53 +102,31 @@ class KrakenWallet(Wallet):
         try:
             if not self.is_authenticated:
                 if not self.authenticate():
-                    return {
-                        'success': False,
-                        'transactions_fetched': 0,
-                        'balance_updated': False,
-                        'last_sync': None,
-                        'error': 'Authentication failed'
-                    }
+                    return False, "Authentication failed"
             
-            # Ensure data directories exist
             self._ensure_data_directories()
             
             # Set default start date if not provided
             if not start_date:
-                start_date = "2021-01-01"
+                start_date = "2000-01-01"
             
             logger.info(f"Starting Kraken synchronization from {start_date}")
             
             # Fetch transaction data
-            transactions_fetched = self._synchronize_transactions(start_date, end_date)
-            
-            # Update balance
-            balance_updated = self._synchronize_balance()
+            self._synchronize_transactions(start_date, end_date)
             
             # Update OHLC data
-            ohlc_updated = self._synchronize_ohlc_data(start_date)
+            # TODO: Review implementation - Does it make sense to synchronize OHLC data?
+            #self._synchronize_ohlc_data(start_date)
             
             # Update last sync timestamp
-            self.update_last_sync()
+            self.last_sync = datetime.now()
             
-            return {
-                'success': True,
-                'transactions_fetched': transactions_fetched,
-                'balance_updated': balance_updated,
-                'ohlc_updated': ohlc_updated,
-                'last_sync': self.last_sync,
-                'error': None
-            }
+            return True, None
             
         except Exception as e:
             logger.error(f"Kraken synchronization error: {str(e)}")
-            return {
-                'success': False,
-                'transactions_fetched': 0,
-                'balance_updated': False,
-                'last_sync': None,
-                'error': str(e)
-            }
+            return False, str(e)
     
     def get_balance(self) -> pd.DataFrame:
         """
@@ -205,6 +135,7 @@ class KrakenWallet(Wallet):
         Returns:
             DataFrame with asset balances
         """
+        # TODO: Review implementation
         try:
             if not self.is_authenticated:
                 if not self.authenticate():
@@ -246,6 +177,7 @@ class KrakenWallet(Wallet):
         Returns:
             DataFrame with transaction history
         """
+        # TODO: Review implementation
         try:
             if not self.is_authenticated:
                 if not self.authenticate():
@@ -287,17 +219,16 @@ class KrakenWallet(Wallet):
             logger.error(f"Error getting Kraken transactions: {str(e)}")
             return pd.DataFrame()
     
-    # ============================================================================
-    # PRIVATE HELPER METHODS
-    # ============================================================================
-    
     def _ensure_data_directories(self):
         """Ensure all necessary data directories exist."""
-        dirs = [
-            os.path.join(self.persistent_data_dir, 'data'),
-            os.path.join(self.persistent_data_dir, 'logs'),
-            os.path.join(self.persistent_data_dir, 'config')
-        ]
+        # Get all unique directory paths from the file paths defined in __init__
+        dirs = set()
+        
+        # Extract directories from ledger_file and ohlc_file
+        dirs.add(os.path.dirname(self.ledger_file))
+        dirs.add(os.path.dirname(self.ohlc_file))
+        
+        # Create all directories
         for dir_path in dirs:
             os.makedirs(dir_path, exist_ok=True)
     
@@ -349,27 +280,6 @@ class KrakenWallet(Wallet):
             logger.error(f"Error synchronizing transactions: {str(e)}")
             return 0
     
-    def _synchronize_balance(self) -> bool:
-        """
-        Synchronize balance data.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Balance is fetched on-demand, so just verify we can get it
-            balance_df = self.get_balance()
-            if not balance_df.empty:
-                logger.info("Balance synchronization successful")
-                return True
-            else:
-                logger.warning("Balance synchronization failed - no data returned")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error synchronizing balance: {str(e)}")
-            return False
-    
     def _synchronize_ohlc_data(self, start_date: str) -> bool:
         """
         Synchronize OHLC (price) data.
@@ -407,10 +317,6 @@ class KrakenWallet(Wallet):
         except Exception as e:
             logger.error(f"Error synchronizing OHLC data: {str(e)}")
             return False
-    
-    # ============================================================================
-    # KRAKEN API METHODS (moved from kraken.py)
-    # ============================================================================
     
     def _decimal_from_value(self, value):
         """Convert value to Decimal."""

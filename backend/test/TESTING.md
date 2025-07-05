@@ -13,7 +13,7 @@ The testing strategy uses **mocking** to isolate the code under test from extern
 ## Test Structure
 
 ### Test Files
-- `test_kraken_wallet.py` - Unit tests for KrakenWallet class
+- `test_wallet_kraken.py` - Unit tests for KrakenWallet class
 - `test_wallets.py` - Integration tests for Portfolio class
 - `pytest.ini` - Pytest configuration
 - `run_tests.py` - Test runner script
@@ -64,13 +64,13 @@ python run_tests.py --quiet
 pytest
 
 # Run specific test file
-pytest test_kraken_wallet.py
+pytest test_wallet_kraken.py
 
 # Run specific test class
-pytest test_kraken_wallet.py::TestKrakenWallet
+pytest test_wallet_kraken.py::TestKrakenWallet
 
 # Run specific test method
-pytest test_kraken_wallet.py::TestKrakenWallet::test_authenticate_success
+pytest test_wallet_kraken.py::TestKrakenWallet::test_authenticate_success
 
 # Run with coverage
 pytest --cov=wallets --cov-report=term-missing
@@ -88,13 +88,13 @@ pytest -m api
 python -m unittest discover
 
 # Run specific test file
-python -m unittest test_kraken_wallet
+python -m unittest test_wallet_kraken
 
 # Run specific test class
-python -m unittest test_kraken_wallet.TestKrakenWallet
+python -m unittest test_wallet_kraken.TestKrakenWallet
 
 # Run specific test method
-python -m unittest test_kraken_wallet.TestKrakenWallet.test_authenticate_success
+python -m unittest test_wallet_kraken.TestKrakenWallet.test_authenticate_success
 ```
 
 ## Mocking Strategy
@@ -104,7 +104,7 @@ python -m unittest test_kraken_wallet.TestKrakenWallet.test_authenticate_success
 The tests mock HTTP requests to avoid making real API calls:
 
 ```python
-@patch('wallets.kraken_wallet.requests.post')
+@patch('wallets.wallet_kraken.requests.post')
 def test_authenticate_success(self, mock_post):
     # Mock successful API response
     mock_response = Mock()
@@ -130,7 +130,7 @@ def test_authenticate_success(self, mock_post):
 File operations are mocked to avoid creating real files:
 
 ```python
-@patch('wallets.kraken_wallet.pd.read_parquet')
+@patch('wallets.wallet_kraken.pd.read_parquet')
 def test_get_transactions_success(self, mock_read_parquet):
     # Mock existing ledger data
     mock_ledger_data = pd.DataFrame({...})
@@ -148,7 +148,7 @@ def test_get_transactions_success(self, mock_read_parquet):
 Encryption/decryption operations are mocked:
 
 ```python
-@patch('wallets.kraken_wallet.Fernet')
+@patch('wallets.wallet_kraken.Fernet')
 def test_decrypt_message(self, mock_fernet):
     # Mock Fernet
     mock_fernet_instance = Mock()
@@ -319,7 +319,7 @@ python run_tests.py --type all
 pytest -v -s
 
 # Run specific failing test
-pytest test_kraken_wallet.py::TestKrakenWallet::test_authenticate_success -v -s
+pytest test_wallet_kraken.py::TestKrakenWallet::test_authenticate_success -v -s
 
 # Run with debugger
 pytest --pdb
@@ -341,7 +341,7 @@ When adding new functionality to `KrakenWallet`:
 def test_new_method_success(self):
     """Test successful execution of new method."""
     # Mock dependencies
-    with patch('wallets.kraken_wallet.requests.post') as mock_post:
+    with patch('wallets.wallet_kraken.requests.post') as mock_post:
         mock_response = Mock()
         mock_response.json.return_value = {'result': 'success'}
         mock_post.return_value = mock_response
@@ -356,7 +356,7 @@ def test_new_method_success(self):
 def test_new_method_failure(self):
     """Test failure case of new method."""
     # Mock failure
-    with patch('wallets.kraken_wallet.requests.post') as mock_post:
+    with patch('wallets.wallet_kraken.requests.post') as mock_post:
         mock_post.side_effect = Exception("Network error")
         
         # Test method

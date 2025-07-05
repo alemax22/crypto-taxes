@@ -5,7 +5,7 @@ Provides wallet management functionality for cryptocurrency exchanges
 """
 
 from .wallet import Wallet
-from .kraken_wallet import KrakenWallet
+from .wallet_kraken import KrakenWallet
 from .portfolio import Portfolio
 
 __all__ = [

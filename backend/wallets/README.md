@@ -59,7 +59,7 @@ python test_wallets.py
 wallets/
 ├── __init__.py          # Package initialization
 ├── wallet.py           # Abstract Wallet class
-├── kraken_wallet.py    # Kraken-specific implementation
+├── wallet_kraken.py    # Kraken-specific implementation
 ├── portfolio.py        # Portfolio management class
 └── example_usage.py    # Example usage script
 ```

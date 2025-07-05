@@ -13,7 +13,7 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 
 from wallets.wallet import Wallet
-from wallets.kraken_wallet import KrakenWallet
+from wallets.wallet_kraken import KrakenWallet
 
 logger = logging.getLogger(__name__)
 

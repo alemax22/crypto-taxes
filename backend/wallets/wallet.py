@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import pandas as pd
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class Wallet(ABC):
         self.api_secret = api_secret
         self.last_sync = None
         self.is_authenticated = False
+        self.sync_status = "Not synchronized"
         
         logger.info(f"Initialized {self.name} wallet")
     
@@ -55,6 +57,14 @@ class Wallet(ABC):
         Returns:
             bool: True if synchronization was successful, False otherwise
             error: Error message if synchronization failed, None otherwise
+        
+        Example:
+
+        self.sync_status = "Synchronization in progress"
+        time.sleep(1)
+        self.sync_status = "Synchronization completed"
+        self.last_sync = datetime.now()
+
         """
         return False, None
     
@@ -95,25 +105,16 @@ class Wallet(ABC):
             bool: True if credentials are present and valid, False otherwise
         """
         return False
-    
-    def update_last_sync(self):
-        """Update the last synchronization timestamp."""
-        self.last_sync = datetime.now()
-        logger.info(f"{self.name}: Last sync updated to {self.last_sync}")
+       
     
     def get_sync_status(self) -> Dict[str, Any]:
         """
         Get the current synchronization status.
         
         Returns:
-            Dict with sync status information
+            Tuple with sync status and last sync timestamp
         """
-        return {
-            'name': self.name,
-            'is_authenticated': self.is_authenticated,
-            'last_sync': self.last_sync,
-            'has_credentials': self.validate_credentials()
-        }
+        return self.sync_status, self.last_sync
     
     def __str__(self) -> str:
         """String representation of the wallet."""
