@@ -1,3 +1,11 @@
+# Legacy Dockerfile - This project now uses separate containers
+# See docker-compose.yml for the new multi-container setup
+# 
+# For production: docker-compose up --build
+# For development: docker-compose -f docker-compose.dev.yml up --build
+#
+# This file is kept for reference but is no longer used.
+
 # Multi-stage build for Flask + React application
 FROM node:18-alpine AS frontend-builder
 

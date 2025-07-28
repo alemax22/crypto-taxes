@@ -1,17 +1,23 @@
 version: '3.8'
 
 services:
-  crypto-taxes:
-    build: .
-    container_name: crypto-taxes-app
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crypto-taxes-backend
     ports:
       - "5000:5000"
-    environment:
-      - FLASK_ENV=production
-      - PYTHONUNBUFFERED=1
     volumes:
-      # Mount single persistent data volume
-      - crypto-taxes-data:/app/persistent_data
+      - ./backend:/app
+      - crypto_data:/app/persistent_data
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5000
+    networks:
+      - crypto-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -19,13 +25,35 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - crypto-taxes-network
 
-networks:
-  crypto-taxes-network:
-    driver: bridge
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crypto-taxes-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    networks:
+      - crypto-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
-  crypto-taxes-data:
-    driver: local 
+  crypto_data:
+    driver: local
+
+networks:
+  crypto-network:
+    driver: bridge 

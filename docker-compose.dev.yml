@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crypto-taxes-backend-dev
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - crypto_data_dev:/app/persistent_data
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5000
+    networks:
+      - crypto-network-dev
+    restart: unless-stopped
+    command: ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5000", "--reload"]
+
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: crypto-taxes-frontend-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - crypto-network-dev
+    depends_on:
+      - backend-dev
+    restart: unless-stopped
+    command: ["npm", "start"]
+
+volumes:
+  crypto_data_dev:
+    driver: local
+
+networks:
+  crypto-network-dev:
+    driver: bridge 

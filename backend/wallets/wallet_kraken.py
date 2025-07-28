@@ -399,7 +399,9 @@ class KrakenWallet(Wallet):
         # Calculate running balance per asset (sorted by datetime)
         result_df = result_df.sort_values(["asset", "datetime"])
         result_df["temp_amount"] = result_df["amount"].astype(float)
-        result_df["balance"] = result_df.groupby("asset")["temp_amount"].cumsum()
+        result_df["temp_fee"] = result_df["fee"].astype(float)
+        result_df["temp_amount_without_fee"] = result_df["temp_amount"] - result_df["temp_fee"]
+        result_df["balance"] = result_df.groupby("asset")["temp_amount_without_fee"].cumsum()
         result_df["asset_price_in_reference_fiat"] = Decimal('0')
         result_df["fee"] = result_df["fee"].apply(self._decimal_from_value)
         result_df["transaction_original_type"] = result_df["type"]
@@ -978,4 +980,4 @@ if __name__ == "__main__":
         api_secret = file.readline().strip()
     wallet = KrakenWallet(reference_fiat="EUR", api_key=api_key, api_secret=api_secret)
     wallet.authenticate()
-    wallet.synchronize(start_date="2025-01-01")
+    wallet.synchronize(start_date="2020-01-01")
