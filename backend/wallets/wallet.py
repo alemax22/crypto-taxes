@@ -23,7 +23,7 @@ class Wallet(ABC):
     and management.
     """
     
-    def __init__(self, name: str, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(self, name: str, reference_fiat: str, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         """
         Initialize the wallet.
         
@@ -33,16 +33,22 @@ class Wallet(ABC):
             api_secret: API secret for authentication (optional)
         """
         self.name = name
+        self.reference_fiat = reference_fiat
         self.api_key = api_key
         self.api_secret = api_secret
         self.last_sync = None
         self.is_authenticated = False
-        self.sync_status = "Not synchronized"
+        # Status of the synchronization process
+        # - not synchronized: the wallet has not been synchronized yet
+        # - in progress: the synchronization is in progress
+        # - completed: the synchronization has been completed
+        # - failed: the synchronization has failed
+        self.sync_status = "not synchronized"
         
         logger.info(f"Initialized {self.name} wallet")
     
     @abstractmethod
-    def synchronize(self, start_date: Optional[str] = None) -> Dict[str, Any]:
+    def synchronize(self, start_date: Optional[str] = None) -> tuple[bool, Optional[str]]:
         """
         Synchronize local data with the remote wallet/exchange.
         
@@ -60,10 +66,33 @@ class Wallet(ABC):
         
         Example:
 
-        self.sync_status = "Synchronization in progress"
+        self.sync_status = "in progress"
         time.sleep(1)
-        self.sync_status = "Synchronization completed"
+        self.sync_status = "completed"
         self.last_sync = datetime.now()
+
+        The output dataframe should have the following columns:
+        - datetime: datetime
+        - transaction_id: str
+        - correlation_id: str
+        - transaction_type: str
+            - deposit:
+                - reward
+                - deposit
+            - trade:
+                - crypto -> crypto
+                - crypto -> fiat
+                - fiat -> crypto
+            - withdrawal
+            - transfer (from another wallet)
+        - asset: str
+        - amount: decimal
+        - balance: float
+        - asset_price_in_reference_fiat: decimal
+        - fee: decimal
+        - transaction_original_type: str (value coming from the exchange)
+        - asset_original_name: str (value coming from the exchange)
+        - asset_original_balance: str (value coming from the exchange)
 
         """
         return False, None
@@ -107,7 +136,7 @@ class Wallet(ABC):
         return False
        
     
-    def get_sync_status(self) -> Dict[str, Any]:
+    def get_sync_status(self) -> tuple[str, Optional[datetime]]:
         """
         Get the current synchronization status.
         

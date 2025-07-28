@@ -45,7 +45,7 @@ class Portfolio:
         
         logger.info(f"Portfolio initialized with {len(self.wallets_data)} wallets")
     
-    def _initialize_encryption(self):
+    def _initialize_encryption(self) -> None:
         """Initialize encryption key for API credentials."""
         if not os.path.exists(self.encryption_key_file):
             logger.info("Creating new encryption key for portfolio")
@@ -53,7 +53,7 @@ class Portfolio:
         else:
             logger.info("Using existing encryption key")
     
-    def _generate_encryption_key(self):
+    def _generate_encryption_key(self) -> None:
         """Generate a new encryption key and save it."""
         try:
             key = Fernet.generate_key()
@@ -73,7 +73,7 @@ class Portfolio:
             logger.error(f"Error loading encryption key: {e}")
             raise
     
-    def _encrypt_api_credentials(self, api_key: str, api_secret: str) -> tuple:
+    def _encrypt_api_credentials(self, api_key: str, api_secret: str) -> tuple[str, str]:
         """
         Encrypt API credentials.
         
@@ -96,7 +96,7 @@ class Portfolio:
             logger.error(f"Error encrypting API credentials: {e}")
             raise
     
-    def _decrypt_api_credentials(self, encrypted_api_key: str, encrypted_api_secret: str) -> tuple:
+    def _decrypt_api_credentials(self, encrypted_api_key: str, encrypted_api_secret: str) -> tuple[str, str]:
         """
         Decrypt API credentials.
         
@@ -119,7 +119,7 @@ class Portfolio:
             logger.error(f"Error decrypting API credentials: {e}")
             raise
     
-    def _load_wallets_from_csv(self):
+    def _load_wallets_from_csv(self) -> None:
         """Load wallet configurations from CSV file."""
         if not os.path.exists(self.csv_file_path):
             logger.info(f"CSV file {self.csv_file_path} does not exist. Creating new file.")
@@ -154,7 +154,7 @@ class Portfolio:
             logger.error(f"Error loading wallets from CSV: {e}")
             self.wallets_data = []
     
-    def _create_csv_file(self):
+    def _create_csv_file(self) -> None:
         """Create a new CSV file with the proper headers."""
         headers = [
             'wallet_id',
@@ -177,7 +177,7 @@ class Portfolio:
         except Exception as e:
             logger.error(f"Error creating CSV file: {e}")
     
-    def _save_wallets_to_csv(self):
+    def _save_wallets_to_csv(self) -> None:
         """Save wallet configurations to CSV file."""
         if not self.wallets_data:
             return
@@ -382,12 +382,11 @@ class Portfolio:
                 wallet_instance = self.load_wallet(wallet_id)
                 if wallet_instance:
                     logger.info(f"Synchronizing wallet: {wallet_name}")
-                    sync_result = wallet_instance.synchronize(start_date, end_date)
+                    success, error = wallet_instance.synchronize(start_date, end_date)
                     results[wallet_id] = {
                         'name': wallet_name,
-                        'success': sync_result['success'],
-                        'transactions_fetched': sync_result.get('transactions_fetched', 0),
-                        'error': sync_result.get('error')
+                        'success': success,
+                        'error': error
                     }
                 else:
                     results[wallet_id] = {

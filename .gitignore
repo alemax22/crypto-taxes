@@ -6,6 +6,7 @@ secret.key
 
 # Data files
 *.parquet
+*.csv
 kraken_ledger.parquet
 kraken_ohlc.parquet
 
