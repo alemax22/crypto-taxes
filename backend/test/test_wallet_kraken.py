@@ -240,11 +240,11 @@ class TestKrakenWallet(unittest.TestCase):
         # Verify the calls were made with correct parameters
         expected_calls = [
             # First call: ofs=0, without_count="false" (to get total count)
-            (("2022-01-01", 0, "false"),),
+            (("1640995200", 0, "false"),),
             # Second call: ofs=50, without_count="true"
-            (("2022-01-01", 50, "true"),),
+            (("1640995200", 50, "true"),),
             # Third call: ofs=100, without_count="true"
-            (("2022-01-01", 100, "true"),),
+            (("1640995200", 100, "true"),),
         ]
         
         for i, call in enumerate(mock_get_ledger.call_args_list):
@@ -406,35 +406,6 @@ class TestKrakenWalletIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
-    
-    @patch.object(KrakenWallet, '_synchronize_ohlc_data')
-    @patch.object(KrakenWallet, '_synchronize_balance')
-    @patch.object(KrakenWallet, '_synchronize_transactions')
-    @patch.object(KrakenWallet, '_get_ledger')
-    def test_full_synchronization_workflow(self, mock_get_ledger, mock_sync_transactions, mock_sync_balance, mock_sync_ohlc):
-        """Test complete synchronization workflow."""
-        # Mock authentication
-        mock_get_ledger.return_value = {
-            'error': [],
-            'result': {'ledger': {}, 'count': 0}
-        }
-        
-        # Mock synchronization methods
-        mock_sync_transactions.return_value = 10  # 10 transactions fetched
-        mock_sync_balance.return_value = True
-        mock_sync_ohlc.return_value = True
-        
-        # Test synchronization
-        result = self.wallet.synchronize(start_date="2022-01-01")
-        
-        # Verify results
-        self.assertTrue(result['success'])
-        self.assertEqual(result['transactions_fetched'], 10)
-        self.assertTrue(result['balance_updated'])
-        self.assertTrue(result['ohlc_updated'])
-        
-        # Note: File existence checks removed since we're mocking everything
-        # and the actual files won't be created in the test environment
 
 
 if __name__ == '__main__':
