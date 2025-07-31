@@ -6,13 +6,15 @@ Base class for all wallet/exchange implementations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Optional, List, Dict, Any
 import pandas as pd
 import logging
-import time
+import os
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
+RESAMPLING_INTERVAL = 60*60*24 # 1 day
 
 class Wallet(ABC):
     """
@@ -87,7 +89,7 @@ class Wallet(ABC):
             - transfer (from another wallet)
         - asset: str
         - amount: decimal
-        - balance: float
+        - balance: float (the balance of the asset at the time of the transaction)
         - asset_price_in_reference_fiat: decimal
         - fee: decimal
         - transaction_original_type: str (value coming from the exchange)
@@ -98,6 +100,17 @@ class Wallet(ABC):
         return False, None
     
     @abstractmethod
+    def authenticate(self) -> bool:
+        """
+        Validate that the wallet has the necessary credentials and that they are valid.
+        This method should be used to validate the credentials before attempting to synchronize data.
+        In case of API tokens, it should check that they have all the necessary permissions.
+
+        Returns:
+            bool: True if credentials are present and valid, False otherwise
+        """
+        return False
+    
     def get_balance(self) -> pd.DataFrame:
         """
         Get current balance from the local data.
@@ -105,10 +118,53 @@ class Wallet(ABC):
         
         Returns:
             DataFrame with asset balances
+            - asset: str
+            - balance: float (total balance of the asset)
+            - balance_in_reference_fiat: float (total balance of the asset in the reference fiat)
+            - asset_price_in_reference_fiat: float (price of the asset in the reference fiat)
+            - timestamp: int (timestamp of the ohlc data used to compute the balance in reference fiat)
         """
-        return pd.DataFrame()
+
+        balance_df = pd.DataFrame()
+
+        if self.last_sync is not None:
+            existing_df = self._retrieve_local_ledger_data()
+            if not existing_df.empty:
+                existing_df.sort_values(by="datetime", ascending=False, inplace=True)
+                balance_df = existing_df.groupby("asset")["balance"].first().reset_index()
+                balance_df["timestamp"] = (datetime.now().timestamp() - RESAMPLING_INTERVAL) // RESAMPLING_INTERVAL * RESAMPLING_INTERVAL
+                
+                # Get unique assets from transactions for OHLC data
+                assets_in_transactions = balance_df["asset"].unique().tolist()
+                
+                # Fetch OHLC data for price calculations of the asset without price in reference fiat
+                ohlc_df = self._get_ohlc_data(
+                    assets_in_portfolio=assets_in_transactions,
+                )
+
+                ohlc_df.reset_index(inplace=True)
+
+                # Merge the DataFrames on both asset and timestamp
+                balance_df = pd.merge(
+                    balance_df,
+                    ohlc_df[['timestamp', 'asset', 'price']], 
+                    how='left',
+                    on=['asset', 'timestamp'], 
+                    suffixes=('', '_ohlc')
+                )
+                
+                balance_df["asset_price_in_reference_fiat"] = balance_df["price"]
+                balance_df["balance_in_reference_fiat"] = balance_df["balance"] * balance_df["asset_price_in_reference_fiat"]
+                # Convert to float first, then round
+                balance_df["balance_in_reference_fiat"] = balance_df["balance_in_reference_fiat"].astype(float).round(2)
+                balance_df = balance_df.drop(columns=["price"])
+            else:
+                logger.warning("No local ledger data found") 
+        else:
+            logger.warning("Wallet has not been synchronized yet")
+
+        return balance_df
     
-    @abstractmethod
     def get_transactions(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         """
         Get transaction history from the local data.
@@ -122,20 +178,15 @@ class Wallet(ABC):
             DataFrame with transaction history
         """
         return pd.DataFrame()
-    
-    @abstractmethod
-    def authenticate(self) -> bool:
-        """
-        Validate that the wallet has the necessary credentials and that they are valid.
-        This method should be used to validate the credentials before attempting to synchronize data.
-        In case of API tokens, it should check that they have all the necessary permissions.
 
-        Returns:
-            bool: True if credentials are present and valid, False otherwise
+
+    @abstractmethod
+    def _get_ohlc_data(self, assets_in_portfolio: List[str], start_date: Optional[str] = None) -> pd.DataFrame:
         """
-        return False
-       
-    
+        Get OHLC data for a list of assets.
+        """
+        return pd.DataFrame()
+
     def get_sync_status(self) -> tuple[str, Optional[datetime]]:
         """
         Get the current synchronization status.
@@ -145,6 +196,53 @@ class Wallet(ABC):
         """
         return self.sync_status, self.last_sync
     
+    def _retrieve_local_ledger_data(self) -> pd.DataFrame:
+        """Retrieve local ledger data."""
+
+        existing_df = pd.DataFrame()
+
+        if os.path.exists(self.ledger_file):
+            try:
+                existing_df = pd.read_parquet(self.ledger_file, engine="fastparquet")
+                # Convert columns to Decimal (parquet does not support Decimal)
+                existing_df["amount"] = existing_df["amount"].apply(self._decimal_from_value)
+                existing_df["fee"] = existing_df["fee"].apply(self._decimal_from_value)
+                existing_df["asset_price_in_reference_fiat"] = existing_df["asset_price_in_reference_fiat"].apply(self._decimal_from_value)
+                
+                logger.info(f"Loaded {len(existing_df)} existing transactions")
+            except Exception as e:
+                    logger.warning(f"Error loading existing ledger data: {e}")
+        else:
+            logger.info(f"No local ledger data found in {self.ledger_file}")
+        return existing_df
+
+    def _save_local_ledger_data(self, df: pd.DataFrame) -> None:
+        """Save local ledger data to file."""
+        
+        ledger_parquet_df = df.copy()
+
+        try:   
+            # Convert columns to specific types before saving (parquet does not support Decimal)
+            ledger_parquet_df = ledger_parquet_df.astype({
+                'amount': 'string',
+                'balance': 'float64',
+                'asset_price_in_reference_fiat': 'string',
+                'fee': 'string',
+                'transaction_id': 'string',
+                'correlation_id': 'string',
+                'asset': 'string',
+                'transaction_type': 'string',
+                'transaction_original_type': 'string',
+                'asset_original_name': 'string',
+                'asset_original_balance': 'string'
+            })
+            
+            # Save to file
+            ledger_parquet_df.to_parquet(self.ledger_file, engine="fastparquet", compression="GZIP")
+            
+        except Exception as e:
+            logger.error(f"Error saving local ledger data: {e}")
+
     def __str__(self) -> str:
         """String representation of the wallet."""
         return f"{self.name} Wallet (Authenticated: {self.is_authenticated}, Last Sync: {self.last_sync})"

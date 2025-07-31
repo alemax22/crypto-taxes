@@ -4,6 +4,7 @@ Kraken Wallet Implementation
 Specific implementation for Kraken exchange
 """
 
+import json
 import os
 import sys
 import time
@@ -12,10 +13,8 @@ import urllib.parse
 import hashlib
 import hmac
 import base64
-import json
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 import logging
@@ -27,8 +26,10 @@ from wallets.wallet import Wallet
 
 logger = logging.getLogger(__name__)
 
-RESAMPLING_INTERVAL = 60*60*24
+RESAMPLING_INTERVAL = 60*60*24 # 1 day
 EXCEPTION_ASSETS = ["KFEE", "NFT"]
+TX_BATCH_SIZE = 50
+SLEEPING_TIME = 4 # seconds after every call to refill the call limit counter
 
 class KrakenWallet(Wallet):
     """
@@ -76,10 +77,10 @@ class KrakenWallet(Wallet):
             
             # Test authentication by getting balance
             test_start_timestamp = int(datetime.now().timestamp())
-            ledger_response = self._get_ledger(test_start_timestamp, ofs=0)
+            ledger_response_json = self._get_ledger(test_start_timestamp, ofs=0)
             
-            if 'error' in ledger_response and ledger_response['error']:
-                logger.error(f"Kraken authentication failed: {ledger_response['error']}")
+            if 'error' in ledger_response_json and ledger_response_json['error']:
+                logger.error(f"Kraken authentication failed: {ledger_response_json['error']}")
                 return self.is_authenticated
             
             self.is_authenticated = True
@@ -163,98 +164,6 @@ class KrakenWallet(Wallet):
             self.sync_status = "failed"
             return False, str(e)
     
-    def get_balance(self) -> pd.DataFrame:
-        """
-        Get current balance from Kraken.
-        
-        Returns:
-            DataFrame with asset balances
-        """
-        # TODO: Review implementation
-        try:
-            if not self.is_authenticated:
-                if not self.authenticate():
-                    return pd.DataFrame()
-            
-            balance_response = self._get_balance_raw()
-            
-            if 'error' in balance_response and balance_response['error']:
-                logger.error(f"Error getting Kraken balance: {balance_response['error']}")
-                return pd.DataFrame()
-            
-            # Convert to DataFrame
-            balance_data = balance_response['result']
-            balance_df = pd.DataFrame.from_dict(balance_data, orient='index', columns=['balance'])
-            balance_df = balance_df.reset_index(names=['asset'])
-            
-            # Normalize asset names
-            balance_df = self._normalize_assets_name(balance_df, "asset")
-            
-            # Convert to decimal
-            balance_df['balance'] = balance_df.apply(
-                lambda row: self._decimal_from_value(row['balance']), axis=1
-            )
-            
-            return balance_df
-            
-        except Exception as e:
-            logger.error(f"Error getting Kraken balance: {str(e)}")
-            return pd.DataFrame()
-    
-    def get_transactions(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
-        """
-        Get transaction history from Kraken.
-        
-        Args:
-            start_date: Start date for transaction history (YYYY-MM-DD format)
-            end_date: End date for transaction history (YYYY-MM-DD format)
-            
-        Returns:
-            DataFrame with transaction history in common format
-        """
-
-        # TODO: Review implementation
-        try:
-            if not self.is_authenticated:
-                if not self.authenticate():
-                    return pd.DataFrame()
-            
-            # Set default start date if not provided
-            if not start_date:
-                start_date = "2021-01-01"
-            
-            # Fetch all ledger data
-            ledger_df = self._retrieve_ledger_data(start_date)
-            
-            if ledger_df.empty:
-                logger.warning("No transactions found for the specified date range")
-                return pd.DataFrame()
-            
-            # Filter by end date if provided
-            if end_date:
-                end_timestamp = datetime.strptime(end_date, "%Y-%m-%d")
-                ledger_df = ledger_df[ledger_df['date'] <= end_timestamp]
-            
-            # Normalize asset names
-            ledger_df = self._normalize_assets_name(ledger_df, "asset", True)
-            
-            # Add decimal columns
-            ledger_df["decimalamount"] = ledger_df.apply(
-                lambda row: self._decimal_from_value(row["amount"]), axis=1
-            )
-            ledger_df["decimalbalance"] = ledger_df.apply(
-                lambda row: self._decimal_from_value(row["balance"]), axis=1
-            )
-            ledger_df["decimalfee"] = ledger_df.apply(
-                lambda row: self._decimal_from_value(row["fee"]), axis=1
-            )
-            
-            return ledger_df
-            
-        except Exception as e:
-            logger.error(f"Error getting Kraken transactions: {str(e)}")
-            return pd.DataFrame()
-    
     def _ensure_data_directories(self) -> None:
         """Ensure all necessary data directories exist."""
         # Get all unique directory paths from the file paths defined in __init__
@@ -276,25 +185,21 @@ class KrakenWallet(Wallet):
             start_date: Start date for transactions
             
         Returns:
-            int: Number of transactions fetched
+            int: Total number of transactions
         """
-        start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
         try:
             # Load existing data if available
-            existing_df = pd.DataFrame()
-            if os.path.exists(self.ledger_file):
-                try:
-                    existing_df = pd.read_parquet(self.ledger_file, engine="fastparquet")
-                    existing_df["amount"] = existing_df["amount"].apply(self._decimal_from_value)
-                    existing_df["fee"] = existing_df["fee"].apply(self._decimal_from_value)
-                    existing_df["asset_price_in_reference_fiat"] = existing_df["asset_price_in_reference_fiat"].apply(self._decimal_from_value)
-                    start_timestamp = int(existing_df["datetime"].max().timestamp())
-                    logger.info(f"Loaded {len(existing_df)} existing transactions")
-                except Exception as e:
-                    logger.warning(f"Error loading existing ledger data: {e}")
+            existing_df = self._retrieve_local_ledger_data()
+
+            if existing_df.empty:
+                start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+            else:
+                start_timestamp = int(existing_df["datetime"].max().timestamp())
+
+            logger.info(f"Synchronizing transactions from {datetime.fromtimestamp(start_timestamp).strftime('%Y-%m-%d %H:%M:%S')} to {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Fetch new data
-            new_df = self._retrieve_ledger_data(start_timestamp)
+            new_df = self._retrieve_kraken_ledger_data(start_timestamp)
             
             if new_df.empty:
                 logger.info("No new transactions found")
@@ -311,37 +216,20 @@ class KrakenWallet(Wallet):
             else:
                 combined_df = new_df
             
-            combined_parquet_df = combined_df.copy()
-            
-            # Convert columns to specific types before saving (parquet does not support Decimal)
-            combined_df = combined_df.astype({
-                'amount': 'string',
-                'balance': 'float64',
-                'asset_price_in_reference_fiat': 'string',
-                'fee': 'string',
-                'transaction_id': 'string',
-                'correlation_id': 'string',
-                'asset': 'string',
-                'transaction_type': 'string',
-                'transaction_original_type': 'string',
-                'asset_original_name': 'string',
-                'asset_original_balance': 'string'
-            })
-
-            combined_parquet_df.to_csv("combined_df.csv")
-
-            # Save to file
-            combined_parquet_df.to_parquet(self.ledger_file, engine="fastparquet", compression="GZIP")
+            # Save to local file
+            self._save_local_ledger_data(combined_df)
             
             transactions_fetched = len(new_df)
+            total_transactions = len(combined_df)
             logger.info(f"Synchronized {transactions_fetched} new transactions")
+            logger.info(f"Total transactions: {total_transactions}")
             
-            return transactions_fetched
+            return total_transactions
             
         except Exception as e:
             logger.error(f"Error synchronizing transactions: {str(e)}")
             return -1
-    
+
     def _create_transaction_df_with_common_format(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Create a transaction dataframe with common format.
@@ -605,51 +493,9 @@ class KrakenWallet(Wallet):
 
         return result_df
     
-    def _synchronize_ohlc_data(self, start_date: str) -> bool:
-        """
-        Synchronize OHLC (price) data.
-        
-        Args:
-            start_date: Start date for OHLC data
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Get assets from ledger data
-            if os.path.exists(self.ledger_file):
-                ledger_df = pd.read_parquet(self.ledger_file, engine="fastparquet")
-                assets_in_portfolio = ledger_df["assetnorm"].unique()
-            else:
-                # If no ledger data, use default assets
-                assets_in_portfolio = ["XXBT", "XETH", "ZEUR"]
-            
-            # Fetch OHLC data with persistence
-            ohlc_df = self._get_ohlc_data_with_persistence_old(
-                assets_in_portfolio=assets_in_portfolio,
-                reference_asset="ZEUR",
-                exception_assets=EXCEPTION_ASSETS,
-                start_date=start_date
-            )
-            
-            if not ohlc_df.empty:
-                logger.info(f"OHLC data synchronization successful - {len(ohlc_df)} records")
-                return True
-            else:
-                logger.warning("OHLC data synchronization failed - no data returned")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error synchronizing OHLC data: {str(e)}")
-            return False
-    
     def _decimal_from_value(self, value: Any) -> Decimal:
         """Convert value to Decimal."""
         return Decimal(value)
-    
-    def _decimal_sum(self, value1: Any, value2: Any) -> Decimal:
-        """Sum two decimal values."""
-        return Decimal(value1) + Decimal(value2)
     
     def _get_kraken_signature(self, urlpath: str, data: Dict[str, Any], secret: str) -> str:
         """Generate Kraken API signature."""
@@ -674,6 +520,7 @@ class KrakenWallet(Wallet):
         req = requests.get((self.base_url + uri_path))
         return req
     
+    # TODO: TO be used to compare the balance with the local one, or delete it!
     def _get_balance_raw(self, without_count: str = "false") -> Dict[str, Any]:
         """Get raw balance response from Kraken."""
         resp_ledger = self._kraken_request('/0/private/Balance', {
@@ -681,7 +528,7 @@ class KrakenWallet(Wallet):
         })
         return resp_ledger.json()
     
-    def _get_ledger(self, start_timestamp: int, ofs: int, without_count: str = "false") -> Dict[str, Any]:
+    def _get_ledger(self, start_timestamp: int, ofs: int = 0, without_count: str = "false") -> Dict[str, Any]:
         """Get ledger data from Kraken."""
         resp_ledger = self._kraken_request('/0/private/Ledgers', {
             "nonce": str(int(1_000_000*time.time())),
@@ -691,10 +538,14 @@ class KrakenWallet(Wallet):
         })
         return resp_ledger.json()
     
-    def _retrieve_ledger_data(self, start_timestamp: int) -> pd.DataFrame:
+    def _get_tradable_assets_info(self) -> Dict[str, Any]:
+        """Get tradable assets info from Kraken."""
+        resp_trad_assets = self._kraken_public_request('/0/public/AssetPairs')
+        trad_response_json = resp_trad_assets.json()
+        return trad_response_json
+    
+    def _retrieve_kraken_ledger_data(self, start_timestamp: int) -> pd.DataFrame:
         """Retrieve all ledger data from Kraken."""
-        tx_batch_size = 50
-        sleeping_time = 4  # After every call we should sleep 4s to refill entirely the call limit counter
         has_new_transactions = True
         ledger_df = pd.DataFrame([])
         consecutive_error_counter = 0
@@ -703,8 +554,8 @@ class KrakenWallet(Wallet):
         without_count = "false"
         
         while has_new_transactions:
-            response_json = self._get_ledger(start_timestamp, iter_num*tx_batch_size, without_count)
-            
+            response_json = self._get_ledger(start_timestamp, iter_num*TX_BATCH_SIZE, without_count)
+
             # Get the total counter
             if without_count == "false":
                 total_count = response_json["result"]["count"]
@@ -720,7 +571,7 @@ class KrakenWallet(Wallet):
                 logger.info(f"Call C-{iter_num} performed")
                 if has_new_transactions:
                     logger.info("Now Sleeping...")
-                    time.sleep(sleeping_time)
+                    time.sleep(SLEEPING_TIME)
                 iter_num = iter_num + 1
             else:
                 logger.error(f"ERROR {consecutive_error_counter}")
@@ -758,8 +609,11 @@ class KrakenWallet(Wallet):
     
     def _create_tradable_asset_matrix(self) -> pd.DataFrame:
         """Create tradable asset matrix."""
-        resp_trad_assets = self._kraken_public_request('/0/public/AssetPairs')
-        trad_response_json = resp_trad_assets.json()
+        trad_response_json = self._get_tradable_assets_info()
+        
+        # write to file trad_response_json.json
+        with open("trad_response_json.json", "w") as file:
+            json.dump(trad_response_json, file)
         
         # Create DataFrame from API response
         tradable_asset_df = pd.DataFrame(trad_response_json["result"]).transpose()
@@ -801,7 +655,7 @@ class KrakenWallet(Wallet):
         
         return custom_mappings
     
-    def _get_ohlc_data(self, assets_in_portfolio: List[str]) -> pd.DataFrame:
+    def _get_ohlc_data(self, assets_in_portfolio: List[str], start_date: Optional[str] = None) -> pd.DataFrame:
         """Get OHLC data with persistence to parquet file."""
         filename = self.ohlc_file
         tradable_asset_df = self._create_tradable_asset_matrix()
@@ -917,55 +771,7 @@ class KrakenWallet(Wallet):
             logger.info(f"Saved OHLC data to {filename}")
         
         logger.info(f"Combined data: {combined_df.shape[0]} records")
-        return combined_df
-    
-    def _normalize_assets_name(self, df: pd.DataFrame, asset_column_name: str, log_message: bool = False) -> pd.DataFrame:
-        """
-        Normalize asset names in a DataFrame using Kraken API data.
-        
-        Args:
-            df: DataFrame containing asset data
-            asset_column_name: Name of the column containing asset identifiers
-            log_message: Whether to print debug messages
-        
-        Returns:
-            DataFrame with normalized asset names in 'assetnorm' column
-        """
-        # Get all assets keys in the portfolio
-        assets_in_portfolio = df[asset_column_name].unique()
-        if log_message:
-            logger.info("All assets:")
-            logger.info(assets_in_portfolio)
-        
-        # Create a copy of the DataFrame to avoid modifying the original
-        df_copy = df.copy()
-        
-        # Initialize assetnorm column from the asset column
-        df_copy["assetnorm"] = df_copy[asset_column_name]
-        
-        # Apply basic normalization rules
-        df_copy = self._apply_basic_normalization_rules(df_copy)
-        
-        # Normalized asset list
-        assets_in_portfolio = df_copy["assetnorm"].unique()
-        if log_message:
-            logger.info("Normalized assets:")
-            logger.info(assets_in_portfolio)
-        
-        return df_copy
-    
-    def _apply_basic_normalization_rules(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply basic normalization rules to asset names.
-        """
-        df["assetnorm"] = df["assetnorm"].str.split('.').str[0]
-        df["assetnorm"] = df["assetnorm"].str.split('21').str[0]
-        df.loc[(df["assetnorm"]=="EUR"),["assetnorm"]] = "ZEUR"
-        df.loc[(df["assetnorm"]=="XBT"),["assetnorm"]] = "XXBT"
-        df.loc[(df["assetnorm"]=="ETH"),["assetnorm"]] = "XETH"
-        
-        return df
-    
+        return combined_df   
 
 if __name__ == "__main__":
     # Configure logging
@@ -981,3 +787,4 @@ if __name__ == "__main__":
     wallet = KrakenWallet(reference_fiat="EUR", api_key=api_key, api_secret=api_secret)
     wallet.authenticate()
     wallet.synchronize(start_date="2020-01-01")
+    result_df = wallet.get_balance()

@@ -19,7 +19,7 @@ import time # Added for nonce generation
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from wallets.wallet_kraken import KrakenWallet
+from wallets.wallet_kraken import KrakenWallet, EXCEPTION_ASSETS
 
 
 class TestKrakenWallet(unittest.TestCase):
@@ -39,8 +39,14 @@ class TestKrakenWallet(unittest.TestCase):
         # Create test wallet instance
         self.wallet = KrakenWallet("EUR", self.test_api_key, self.test_api_secret)
         
-        # Override persistent data directory for testing
-        self.wallet.persistent_data_dir = self.persistent_data_dir
+        # Override persistent data directory for testing (change app to app_test)
+        self.wallet.persistent_data_dir = self.persistent_data_dir.replace('/app/', '/app_test/')
+        
+        # Override ledger file path for testing (keep filename, change base folder)
+        self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")
+        
+        # Also override OHLC file path for testing (keep filename, change base folder)
+        self.wallet.ohlc_file = os.path.join(self.persistent_data_dir, "data", "kraken_ohlc.parquet")
     
     def tearDown(self):
         """Clean up test fixtures."""
@@ -168,12 +174,15 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertIsNotNone(self.wallet.last_sync)
         self.assertEqual(self.wallet.sync_status, "completed")
 
-    @patch.object(KrakenWallet, '_create_tradable_asset_matrix')
+    @patch.object(KrakenWallet, '_retrieve_local_ledger_data')
+    @patch.object(KrakenWallet, '_get_tradable_assets_info')
     @patch.object(KrakenWallet, '_get_ohlc_data')
     @patch.object(KrakenWallet, '_get_ledger')
-    def test_synchronize_full_ledger_success(self, mock_get_ledger, mock_ohlc_data, mock_asset_matrix):
+    def test_synchronize_full_ledger_success(self, mock_get_ledger, mock_ohlc_data, mock_get_tradable_assets_info, mock_retrieve_local_ledger_data):
         """Test successful synchronization with multiple ledger calls and asset mapping verification."""
         
+        start_timestamp = 1640991600
+
         # Mock authentication first
         mock_get_ledger.return_value = {
             'error': [],
@@ -188,30 +197,50 @@ class TestKrakenWallet(unittest.TestCase):
         mock_get_ledger.reset_mock()
         
         # Mock asset matrix to return test data
-        mock_asset_matrix.return_value = self._create_test_asset_matrix()
+        mock_get_tradable_assets_info.return_value = self._simulate_tradable_assets_info()
         
-        # Mock OHLC data to return empty DataFrame to avoid complex price calculations
-        mock_ohlc_data.return_value = pd.DataFrame()
+        # Mock OHLC data to return test data to avoid complex price calculations
+        mock_ohlc_data.return_value = self._simulate_ohlc_data(start_timestamp, 110)
         
-        # Create realistic ledger data for 3 consecutive calls
-        # Each call returns 50 transactions (batch size), total 150 transactions
-        ledger_data = self._create_realistic_ledger_data()
+        # Mock retrieve_local_ledger_data to return empty DataFrame
+        mock_retrieve_local_ledger_data.return_value = pd.DataFrame()
         
         # Configure mock to return different data for each call
-        def mock_get_ledger_side_effect(start_date, ofs, without_count="false"):
-            # Convert ledger_data dict to list for slicing
-            ledger_list = list(ledger_data.items())
-            start_idx = ofs
-            end_idx = min(ofs + 50, len(ledger_list))
-            batch_data = dict(ledger_list[start_idx:end_idx])
+        def mock_get_ledger_side_effect(start_timestamp, ofs, without_count="false"):
+            # Load data from anonymized JSON files
+            json_files = [
+                'data/_get_ledger_0.json',
+                'data/_get_ledger_1.json',
+                'data/_get_ledger_2.json',
+                'data/_get_ledger_3.json'
+            ]
+            
+            # Determine which file to use based on offset
+            file_index = ofs // 50
+            if file_index >= len(json_files):
+                # Return empty data if we've exhausted all files
+                return {
+                    'error': [],
+                    'result': {
+                        'ledger': {},
+                        'count': 0
+                    }
+                }
+            
+            # Load the appropriate JSON file
+            import json
+            with open(json_files[file_index], 'r') as f:
+                file_data = json.load(f)
+            
+            ledger_data = file_data['result']['ledger']
             
             if without_count == "false":
                 # First call - return total count
                 return {
                     'error': [],
                     'result': {
-                        'ledger': batch_data,
-                        'count': 150
+                        'ledger': ledger_data,
+                        'count': 178  # Total count from all files
                     }
                 }
             else:
@@ -219,7 +248,7 @@ class TestKrakenWallet(unittest.TestCase):
                 return {
                     'error': [],
                     'result': {
-                        'ledger': batch_data
+                        'ledger': ledger_data
                     }
                 }
         
@@ -234,25 +263,19 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertIsNotNone(self.wallet.last_sync)
         self.assertEqual(self.wallet.sync_status, "completed")
         
-        # Verify that _get_ledger was called exactly 3 times (for 150 transactions in batches of 50)
-        self.assertEqual(mock_get_ledger.call_count, 3)
+        # Verify that _get_ledger was called exactly 4 times (for 178 transactions in batches of 50)
+        self.assertEqual(mock_get_ledger.call_count, 4)
         
         # Verify the calls were made with correct parameters
-        expected_calls = [
-            # First call: ofs=0, without_count="false" (to get total count)
-            (("1640995200", 0, "false"),),
-            # Second call: ofs=50, without_count="true"
-            (("1640995200", 50, "true"),),
-            # Third call: ofs=100, without_count="true"
-            (("1640995200", 100, "true"),),
-        ]
-        
         for i, call in enumerate(mock_get_ledger.call_args_list):
             args, kwargs = call
-            expected_args = expected_calls[i][0]
-            self.assertEqual(args[0], expected_args[0])  # start_date
-            self.assertEqual(args[1], expected_args[1])  # ofs
-            self.assertEqual(args[2], expected_args[2])  # without_count
+            self.assertEqual(args[0], start_timestamp)
+            
+            # Check offset and without_count parameters
+            expected_ofs = [0, 50, 100, 150][i]
+            expected_without_count = ["false", "true", "true", "true"][i]
+            self.assertEqual(args[1], expected_ofs)  # ofs
+            self.assertEqual(args[2], expected_without_count)  # without_count
         
         # Verify that the ledger file was created and contains the expected data
         self.assertTrue(os.path.exists(self.wallet.ledger_file))
@@ -260,8 +283,8 @@ class TestKrakenWallet(unittest.TestCase):
         # Load the saved data and verify asset mapping
         saved_df = pd.read_parquet(self.wallet.ledger_file, engine="fastparquet")
         
-        # Verify we have all 150 transactions
-        self.assertEqual(len(saved_df), 150)
+        # Verify we have all 178 transactions from the JSON files
+        self.assertEqual(len(saved_df), 178)
         
         # Verify asset mapping was done correctly
         self._verify_asset_mapping(saved_df)
@@ -270,91 +293,131 @@ class TestKrakenWallet(unittest.TestCase):
         self._verify_transaction_type_mapping(saved_df)
         
         # Verify required columns are present (basic ones that should be there)
-        basic_columns = ["date", "transaction_id", "asset", "balance", "fee"]
+        basic_columns = ["datetime", 
+                         "correlation_id",
+                         "transaction_id", 
+                         "transaction_type",
+                         "asset",
+                         "amount",
+                         "balance",
+                         "asset_price_in_reference_fiat",
+                         "fee",
+                         "transaction_original_type",
+                         "asset_original_name",
+                         "asset_original_balance"]
         for col in basic_columns:
             self.assertIn(col, saved_df.columns)
-    
-    def _create_realistic_ledger_data(self):
-        """Create realistic ledger data for testing."""
-        ledger_data = {}
-        
-        # Create 150 transactions with various asset types and transaction types
-        for i in range(150):
-            # Vary transaction types and assets
-            tx_type = ["trade", "deposit", "withdrawal", "staking", "fee"][i % 5]
-            asset = ["XXBT", "XETH", "ZEUR", "XBT", "ETH", "EUR"][i % 6]
-            
-            # Create transaction with realistic data
-            ledger_data[f"refid_{i}"] = {
-                "refid": f"refid_{i}",
-                "time": 1640995200 + (i * 3600),  # Increment by 1 hour
-                "type": tx_type,
-                "aclass": "currency",
-                "asset": asset,
-                "amount": str(0.1 + (i * 0.01)),
-                "fee": str(0.001 + (i * 0.0001)),
-                "balance": str(1.0 + (i * 0.1))
-            }
-        
-        return ledger_data
-    
-    def _create_test_asset_matrix(self):
-        """Create a test asset matrix for mocking."""
-        test_data = [
-            {'base': 'BTC', 'quote': 'EUR', 'altname': 'XBTEUR', 'wsname': 'BTC/EUR'},
-            {'base': 'ETH', 'quote': 'EUR', 'altname': 'XETHEUR', 'wsname': 'ETH/EUR'},
-            {'base': 'MATIC', 'quote': 'EUR', 'altname': 'POLEUR', 'wsname': 'POL/EUR'},
+
+        # Verify that all the rows have a price in reference fiat
+        nan_price_mask = saved_df["asset_price_in_reference_fiat"].isna()
+        zero_price_mask = saved_df["asset_price_in_reference_fiat"] == Decimal('0')
+        not_exception_mask = ~saved_df["asset"].isin(EXCEPTION_ASSETS)
+        filter_mask = (nan_price_mask | zero_price_mask) & not_exception_mask
+        self.assertFalse(filter_mask.any(), "There are transactions without a price")
+
+    def _simulate_ohlc_data(self, start_timestamp, num_days):
+        assets_list = [
+            {'asset': 'BTC', 'price': 50000.0},
+            {'asset': 'ETH', 'price': 3000.0},
+            {'asset': '1INCH', 'price': 3.0},
+            {'asset': 'EOS', 'price': 10.0},
+            {'asset': 'SOL', 'price': 130.0},
+            {'asset': 'LUNA', 'price': 60.0},
+            {'asset': 'UNI', 'price': 30.0},
+            {'asset': 'UST', 'price': 0.90},
+            {'asset': 'KSM', 'price': 250.0},
+            {'asset': 'DOT', 'price': 10.0},
+            {'asset': 'ATOM', 'price': 10.0},
+            {'asset': 'ADA', 'price': 2.5}
         ]
-        df = pd.DataFrame(test_data)
-        df = df.set_index(['base', 'quote'])
-        return df
+        assets_list = assets_list * num_days
+        num_assets = len(assets_list)
+        timestamps_list = [start_timestamp + i // num_assets * 86400 for i in range(num_days * num_assets)]
+        dates_list = [datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') for timestamp in timestamps_list]
+        test_ohlc_data = pd.DataFrame({
+            'asset': [asset['asset'] for asset in assets_list] * num_days,
+            'price': [asset['price'] for asset in assets_list] * num_days,
+            'timestamp': timestamps_list,
+            'date': dates_list,
+        })
+        test_ohlc_data = test_ohlc_data.set_index(['date', 'asset'])
+        return test_ohlc_data
+    
+    def _simulate_tradable_assets_info(self):
+        """Read tradable assets info from file trad_response_json.json"""
+        with open("data/_get_tradable_assets_info.json", "r") as file:
+            trad_response_json = json.load(file)
+        return trad_response_json
     
     def _verify_asset_mapping(self, df):
-        """Verify that asset mapping was done correctly."""
-        # Check that asset normalization was applied
-        self.assertIn("assetnorm", df.columns)
+        """Verify that asset mapping was done correctly based on actual JSON data."""
+        # Check that required columns exist
+        self.assertIn("asset", df.columns, "asset column should exist")
+        self.assertIn("asset_original_name", df.columns, "asset_original_name column should exist")
         
-        # Verify specific asset mappings based on the new normalization
-        asset_mappings = {
-            "EUR": "EUR",  # Now normalized to EUR
-            "XBT": "BTC",  # Now normalized to BTC
-            "ETH": "ETH"   # Now normalized to ETH
+        # Get unique assets from both columns
+        original_assets = sorted(df["asset_original_name"].unique())
+        normalized_assets = sorted(df["asset"].unique())
+        
+        # Define expected original assets from JSON files
+        expected_original_assets = [
+            "1INCH", "ADA", "ADA.S", "ATOM", "ATOM.S", "DOT", "DOT.S", 
+            "EOS", "EUR.HOLD", "KSM", "KSM.S", "LUNA", "LUNA.S", 
+            "SOL", "SOL.S", "UNI", "UST", "XETH", "XXBT", "ZEUR"
+        ]
+        
+        # Define expected normalized assets based on _normalize_asset_name function
+        expected_normalized_assets = [
+            "1INCH", "ADA", "ATOM", "BTC", "DOT", "EOS", "ETH", "EUR", "KSM", "LUNA", 
+            "SOL", "UNI", "UST"
+        ]
+        
+        # Verify all expected original assets are present
+        for asset in expected_original_assets:
+            self.assertIn(asset, original_assets, 
+                         f"Expected original asset {asset} not found in data")
+        
+        # Verify all expected normalized assets are present
+        for asset in expected_normalized_assets:
+            self.assertIn(asset, normalized_assets, 
+                         f"Expected normalized asset {asset} not found in data")
+        
+        # Verify specific normalization mappings
+        normalization_mappings = {
+            # Staking assets (.S) -> base assets
+            "ADA.S": "ADA",
+            "ATOM.S": "ATOM", 
+            "DOT.S": "DOT",
+            "KSM.S": "KSM",
+            "LUNA.S": "LUNA",
+            "SOL.S": "SOL",
+            # Special Kraken asset mappings
+            "ZEUR": "EUR",
+            "XXBT": "BTC",
+            "XETH": "ETH",
+            "EUR.HOLD": "EUR",
+            # Assets that should remain unchanged
+            "1INCH": "1INCH",
+            "ADA": "ADA",
+            "ATOM": "ATOM",
+            "DOT": "DOT",
+            "EOS": "EOS",
+            "KSM": "KSM",
+            "LUNA": "LUNA",
+            "SOL": "SOL",
+            "UNI": "UNI",
+            "UST": "UST"
         }
         
-        for original, expected in asset_mappings.items():
-            if original in df["asset"].values:
-                # Find rows with the original asset name
-                original_rows = df[df["asset"] == original]
-                # Check that they were mapped to the expected normalized name
-                normalized_rows = df[df["assetnorm"] == expected]
-                self.assertGreater(len(normalized_rows), 0, 
-                                 f"Asset {original} should be mapped to {expected}")
-        
-        # Verify that asset names with dots were split correctly
-        if any("." in asset for asset in df["asset"].values):
-            dot_assets = df[df["asset"].str.contains(".", na=False)]
-            for _, row in dot_assets.iterrows():
-                # The normalized asset should not contain dots
-                self.assertNotIn(".", row["assetnorm"])
-        
-        # Verify that asset names with "21" were split correctly
-        if any("21" in asset for asset in df["asset"].values):
-            twenty_one_assets = df[df["asset"].str.contains("21", na=False)]
-            for _, row in twenty_one_assets.iterrows():
-                # The normalized asset should not contain "21"
-                self.assertNotIn("21", row["assetnorm"])
-        
-        # Verify that all assets in our test data were processed
-        expected_assets = ["XXBT", "XETH", "ZEUR", "XBT", "ETH", "EUR"]
-        for asset in expected_assets:
-            if asset in df["asset"].values:
-                self.assertIn(asset, df["asset"].values, f"Asset {asset} should be present in the data")
-        
-        # Verify that normalized assets are present
-        normalized_assets = ["BTC", "ETH", "EUR"]
-        for asset in normalized_assets:
-            if asset in df["assetnorm"].values:
-                self.assertIn(asset, df["assetnorm"].values, f"Normalized asset {asset} should be present in the data")
+        # Verify each mapping
+        for original, expected in normalization_mappings.items():
+            if original in original_assets:
+                # Get all rows with this original asset
+                original_rows = df[df["asset_original_name"] == original]
+                # Check that all rows have the expected normalized asset
+                for _, row in original_rows.iterrows():
+                    self.assertEqual(row["asset"], expected,
+                                   f"Asset {original} should normalize to {expected}, but got {row['asset']}")
     
     def _verify_transaction_type_mapping(self, df):
         """Verify that transaction type mapping was done correctly."""
@@ -371,9 +434,9 @@ class TestKrakenWallet(unittest.TestCase):
             }
             
             for kraken_type, expected_type in type_mappings.items():
-                if kraken_type in df["type"].values:
+                if kraken_type in df["transaction_original_type"].values:
                     # Find rows with the original transaction type
-                    original_rows = df[df["type"] == kraken_type]
+                    original_rows = df[df["transaction_original_type"] == kraken_type]
                     # Check that they were mapped to the expected type
                     mapped_rows = df[df["transaction_type"] == expected_type]
                     self.assertGreater(len(mapped_rows), 0,
@@ -386,9 +449,9 @@ class TestKrakenWallet(unittest.TestCase):
                              f"Transaction type {tx_type} is not in valid types: {valid_types}")
         
         # Verify that all transaction types in our test data were processed
-        expected_types = ["trade", "deposit", "withdrawal", "staking", "fee"]
+        expected_types = ["trade", "deposit", "withdrawal", "staking"]
         for tx_type in expected_types:
-            self.assertIn(tx_type, df["type"].values, f"Transaction type {tx_type} should be present in the data")
+            self.assertIn(tx_type, df["transaction_original_type"].values, f"Transaction type {tx_type} should be present in the data")
 
 
 class TestKrakenWalletIntegration(unittest.TestCase):

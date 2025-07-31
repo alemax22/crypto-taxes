@@ -1,0 +1,316 @@
+{
+    "error": [],
+    "result": {
+        "count": null,
+        "ledger": {
+            "PYTEST-S0JS6M-3CSW3-D49ZDZ": {
+                "aclass": "currency",
+                "amount": "-18.7100",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.2900",
+                "refid": "PYTEST-YSGBRIR-RPUYE-LMHYSX",
+                "time": 1639076667.975381,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-MHOYIK-JS904-5WHBVD": {
+                "aclass": "currency",
+                "amount": "20.0000",
+                "asset": "EUR.HOLD",
+                "balance": "19.0000",
+                "fee": "1.0000",
+                "refid": "PYTEST-UDAxihH-eXDV8csNbACgh8T0r3WUWR",
+                "time": 1639076667.049636,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-HVVLFU-TBSUV-65ZNDA": {
+                "aclass": "currency",
+                "amount": "1.1635420000",
+                "asset": "DOT",
+                "balance": "1.1635420000",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-OFFSSV2-XX75B-HY7H14",
+                "time": 1639076547.934662,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-NNRQ2M-3IGKU-1OLCRX": {
+                "aclass": "currency",
+                "amount": "-28.1900",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.4300",
+                "refid": "PYTEST-OFFSSV2-XX75B-HY7H14",
+                "time": 1639076547.928021,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-HIRJH4-YJWGW-WP5PLR": {
+                "aclass": "currency",
+                "amount": "30.0000",
+                "asset": "EUR.HOLD",
+                "balance": "28.6200",
+                "fee": "1.3800",
+                "refid": "PYTEST-VIWvUc9-UfrXHFOmIuwRhvky03bZkM",
+                "time": 1639076547.250859,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-FMKJXW-UPS3K-MIZMLD": {
+                "aclass": "currency",
+                "amount": "40.05663400",
+                "asset": "ADA",
+                "balance": "78.53643800",
+                "fee": "0.00000000",
+                "refid": "PYTEST-GEFFLTW-DVHNZ-5XDPVP",
+                "time": 1639066915.688756,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-H2JRAR-NCH1O-1UE7WJ": {
+                "aclass": "currency",
+                "amount": "-47.1600",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.7100",
+                "refid": "PYTEST-GEFFLTW-DVHNZ-5XDPVP",
+                "time": 1639066915.684128,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-JPACMQ-7HGS5-0BJPTU": {
+                "aclass": "currency",
+                "amount": "50.0000",
+                "asset": "EUR.HOLD",
+                "balance": "47.8700",
+                "fee": "2.1300",
+                "refid": "PYTEST-ICGsWkG-UpMU7eI2h8RIx9NSmLhEqp",
+                "time": 1639066914.430796,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-RBCPBJ-62Y26-5MO6MC": {
+                "aclass": "currency",
+                "amount": "-0.7646552400",
+                "asset": "DOT",
+                "balance": "0.0000000000",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-LJzHh03-MKIcYiluQmvRKa1i2siBDT",
+                "time": 1638976933.656799,
+                "type": "transfer",
+                "subtype": "spottostaking"
+            },
+            "PYTEST-ENWG6Q-YTPXX-BWEQGR": {
+                "aclass": "currency",
+                "amount": "0.7646552400",
+                "asset": "DOT.S",
+                "balance": "0.7646552400",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-XPoiyHU-4Yy87UhIocwJhIKKrce2hM",
+                "time": 1638976925.554581,
+                "type": "transfer",
+                "subtype": "stakingfromspot"
+            },
+            "PYTEST-VPJRAD-NEIXL-YMLBMB": {
+                "aclass": "currency",
+                "amount": "1.9584900000",
+                "asset": "UNI",
+                "balance": "1.9584900000",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-PGSF6AH-BESS2-EU8B9E",
+                "time": 1637509504.488141,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-ELAPDJ-NCDXE-54KOZG": {
+                "aclass": "currency",
+                "amount": "-37.6800",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.5700",
+                "refid": "PYTEST-PGSF6AH-BESS2-EU8B9E",
+                "time": 1637509504.483112,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-TUMNQK-CMV1F-EPK3AI": {
+                "aclass": "currency",
+                "amount": "40.0000",
+                "asset": "EUR.HOLD",
+                "balance": "38.2500",
+                "fee": "1.7500",
+                "refid": "PYTEST-TCNVsSQ-kIGV5HIMe4OKyCaotSdCR3",
+                "time": 1637509503.811559,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-D1MPCS-UV0EE-ZSJCH1": {
+                "aclass": "currency",
+                "amount": "0.0007154000",
+                "asset": "XXBT",
+                "balance": "0.0007154000",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-GD2VZSB-YRO8C-JVCIDG",
+                "time": 1637509409.439195,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-VXH7T4-YX7H8-HJZZPG": {
+                "aclass": "currency",
+                "amount": "-37.6800",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.5700",
+                "refid": "PYTEST-GD2VZSB-YRO8C-JVCIDG",
+                "time": 1637509409.43416,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-CE5177-VQLEY-RUSFYE": {
+                "aclass": "currency",
+                "amount": "40.0000",
+                "asset": "EUR.HOLD",
+                "balance": "38.2500",
+                "fee": "1.7500",
+                "refid": "PYTEST-FOAXxI8-YfqDU4uQtg2lyF8YqAtk7A",
+                "time": 1637509408.61823,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-C5VRMK-UWYP8-BTC3UV": {
+                "aclass": "currency",
+                "amount": "11.24276900",
+                "asset": "ADA",
+                "balance": "38.47980400",
+                "fee": "0.00000000",
+                "refid": "PYTEST-BFIFQMT-SUAXX-VJCG7T",
+                "time": 1637509315.537706,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-QPLPDO-75CJB-ZWDA5U": {
+                "aclass": "currency",
+                "amount": "-18.7100",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.2900",
+                "refid": "PYTEST-BFIFQMT-SUAXX-VJCG7T",
+                "time": 1637509315.533411,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-ZZNVPE-4HIVE-W66COT": {
+                "aclass": "currency",
+                "amount": "20.0000",
+                "asset": "EUR.HOLD",
+                "balance": "19.0000",
+                "fee": "1.0000",
+                "refid": "PYTEST-RDMcR4u-tL9G1bvHyJc31mIoUlfll3",
+                "time": 1637509315.249186,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-J5L62H-Q6SV2-FF1TMT": {
+                "aclass": "currency",
+                "amount": "27.23703500",
+                "asset": "ADA",
+                "balance": "27.23703500",
+                "fee": "0.00000000",
+                "refid": "PYTEST-XUNILE5-POOLY-J7RDFU",
+                "time": 1635419575.49074,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-NF32Z8-L8QIF-I7ZJXK": {
+                "aclass": "currency",
+                "amount": "-47.1600",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.7100",
+                "refid": "PYTEST-XUNILE5-POOLY-J7RDFU",
+                "time": 1635419575.4864,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-N27FBI-M5GOK-K646IC": {
+                "aclass": "currency",
+                "amount": "50.0000",
+                "asset": "EUR.HOLD",
+                "balance": "47.8700",
+                "fee": "2.1300",
+                "refid": "PYTEST-WEwgcn6-K8o60GNm9WayS67al4YM68",
+                "time": 1635419575.038938,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-JSKQ8R-7WSJP-ALKVDN": {
+                "aclass": "currency",
+                "amount": "0.7646552400",
+                "asset": "DOT",
+                "balance": "0.7646552400",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-LHBVGQZ-LMPOB-BUKDWQ",
+                "time": 1635419443.3932,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-ZDO12Y-H685C-6AIRDO": {
+                "aclass": "currency",
+                "amount": "-28.1900",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.4300",
+                "refid": "PYTEST-LHBVGQZ-LMPOB-BUKDWQ",
+                "time": 1635419443.38775,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-CUUYBC-M6MRP-BUAWFC": {
+                "aclass": "currency",
+                "amount": "30.0000",
+                "asset": "EUR.HOLD",
+                "balance": "28.6200",
+                "fee": "1.3800",
+                "refid": "PYTEST-XXrzthP-hINp0m56Xf7ETRAm9SvaCu",
+                "time": 1635419442.947887,
+                "type": "deposit",
+                "subtype": ""
+            },
+            "PYTEST-UBQBC0-YANEU-3CWE0G": {
+                "aclass": "currency",
+                "amount": "4.2835700000",
+                "asset": "1INCH",
+                "balance": "4.2835700000",
+                "fee": "0.0000000000",
+                "refid": "PYTEST-UIXIS8S-FMU6L-SUCQIM",
+                "time": 1635419333.893624,
+                "type": "receive",
+                "subtype": ""
+            },
+            "PYTEST-PSMRQW-NRB5W-89UCDY": {
+                "aclass": "currency",
+                "amount": "-18.7100",
+                "asset": "EUR.HOLD",
+                "balance": "0.0000",
+                "fee": "0.2900",
+                "refid": "PYTEST-UIXIS8S-FMU6L-SUCQIM",
+                "time": 1635419333.887968,
+                "type": "spend",
+                "subtype": ""
+            },
+            "PYTEST-SEQLMK-43DA2-PQM814": {
+                "aclass": "currency",
+                "amount": "20.0000",
+                "asset": "EUR.HOLD",
+                "balance": "19.0000",
+                "fee": "1.0000",
+                "refid": "PYTEST-WJMvulo-qoDHHckA9rHsh0CWuBhCbK",
+                "time": 1635419333.344449,
+                "type": "deposit",
+                "subtype": ""
+            }
+        }
+    }
+}
