@@ -11,16 +11,16 @@ import json
 import os
 import tempfile
 import shutil
+import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-import time # Added for nonce generation
 
 # Add the parent directory to Python path to import backend modules
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from wallets.wallet_kraken import KrakenWallet, EXCEPTION_ASSETS
-
+from config import RESAMPLING_INTERVAL_IN_SECONDS
 
 class TestKrakenWallet(unittest.TestCase):
     """Test cases for KrakenWallet class."""
@@ -38,9 +38,6 @@ class TestKrakenWallet(unittest.TestCase):
         
         # Create test wallet instance
         self.wallet = KrakenWallet("EUR", self.test_api_key, self.test_api_secret)
-        
-        # Override persistent data directory for testing (change app to app_test)
-        self.wallet.persistent_data_dir = self.persistent_data_dir.replace('/app/', '/app_test/')
         
         # Override ledger file path for testing (keep filename, change base folder)
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")
@@ -174,14 +171,17 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertIsNotNone(self.wallet.last_sync)
         self.assertEqual(self.wallet.sync_status, "completed")
 
-    @patch.object(KrakenWallet, '_retrieve_local_ledger_data')
+    @patch.object(time, 'sleep')
     @patch.object(KrakenWallet, '_get_tradable_assets_info')
     @patch.object(KrakenWallet, '_get_ohlc_data')
     @patch.object(KrakenWallet, '_get_ledger')
-    def test_synchronize_full_ledger_success(self, mock_get_ledger, mock_ohlc_data, mock_get_tradable_assets_info, mock_retrieve_local_ledger_data):
+    def test_synchronize_full_ledger_success(self, mock_get_ledger, mock_ohlc_data, mock_get_tradable_assets_info, mock_sleep):
         """Test successful synchronization with multiple ledger calls and asset mapping verification."""
         
-        start_timestamp = 1640991600
+        # Mock sleep to avoid waiting for rate limiting as we are not performing any API calls
+        mock_sleep.return_value = None
+
+        start_timestamp = 1640995200
 
         # Mock authentication first
         mock_get_ledger.return_value = {
@@ -200,11 +200,8 @@ class TestKrakenWallet(unittest.TestCase):
         mock_get_tradable_assets_info.return_value = self._simulate_tradable_assets_info()
         
         # Mock OHLC data to return test data to avoid complex price calculations
-        mock_ohlc_data.return_value = self._simulate_ohlc_data(start_timestamp, 110)
-        
-        # Mock retrieve_local_ledger_data to return empty DataFrame
-        mock_retrieve_local_ledger_data.return_value = pd.DataFrame()
-        
+        mock_ohlc_data.return_value = self._simulate_ohlc_data(start_timestamp, 170)
+
         # Configure mock to return different data for each call
         def mock_get_ledger_side_effect(start_timestamp, ofs, without_count="false"):
             # Load data from anonymized JSON files
@@ -229,7 +226,7 @@ class TestKrakenWallet(unittest.TestCase):
             
             # Load the appropriate JSON file
             import json
-            with open(json_files[file_index], 'r') as f:
+            with open(os.path.join(os.path.dirname(__file__), json_files[file_index]), 'r') as f:
                 file_data = json.load(f)
             
             ledger_data = file_data['result']['ledger']
@@ -281,8 +278,8 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertTrue(os.path.exists(self.wallet.ledger_file))
         
         # Load the saved data and verify asset mapping
-        saved_df = pd.read_parquet(self.wallet.ledger_file, engine="fastparquet")
-        
+        saved_df = self.wallet._retrieve_local_ledger_data()
+
         # Verify we have all 178 transactions from the JSON files
         self.assertEqual(len(saved_df), 178)
         
@@ -313,7 +310,10 @@ class TestKrakenWallet(unittest.TestCase):
         zero_price_mask = saved_df["asset_price_in_reference_fiat"] == Decimal('0')
         not_exception_mask = ~saved_df["asset"].isin(EXCEPTION_ASSETS)
         filter_mask = (nan_price_mask | zero_price_mask) & not_exception_mask
-        self.assertFalse(filter_mask.any(), "There are transactions without a price")
+        self.assertFalse(filter_mask.any(), "There are transactions without a price: " + str(saved_df[filter_mask].shape))
+
+        # Check that the balance column has always positive values
+        self.assertTrue((saved_df["balance"] >= 0).all(), "Balance column should have positive values")
 
     def _simulate_ohlc_data(self, start_timestamp, num_days):
         assets_list = [
@@ -330,9 +330,8 @@ class TestKrakenWallet(unittest.TestCase):
             {'asset': 'ATOM', 'price': 10.0},
             {'asset': 'ADA', 'price': 2.5}
         ]
-        assets_list = assets_list * num_days
         num_assets = len(assets_list)
-        timestamps_list = [start_timestamp + i // num_assets * 86400 for i in range(num_days * num_assets)]
+        timestamps_list = [start_timestamp + (i // num_assets) * RESAMPLING_INTERVAL_IN_SECONDS for i in range(num_days * num_assets)]
         dates_list = [datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') for timestamp in timestamps_list]
         test_ohlc_data = pd.DataFrame({
             'asset': [asset['asset'] for asset in assets_list] * num_days,
@@ -345,7 +344,7 @@ class TestKrakenWallet(unittest.TestCase):
     
     def _simulate_tradable_assets_info(self):
         """Read tradable assets info from file trad_response_json.json"""
-        with open("data/_get_tradable_assets_info.json", "r") as file:
+        with open(os.path.join(os.path.dirname(__file__), "data", "_get_tradable_assets_info.json"), "r") as file:
             trad_response_json = json.load(file)
         return trad_response_json
     
@@ -452,24 +451,6 @@ class TestKrakenWallet(unittest.TestCase):
         expected_types = ["trade", "deposit", "withdrawal", "staking"]
         for tx_type in expected_types:
             self.assertIn(tx_type, df["transaction_original_type"].values, f"Transaction type {tx_type} should be present in the data")
-
-
-class TestKrakenWalletIntegration(unittest.TestCase):
-    """Integration tests for KrakenWallet class."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.test_dir = tempfile.mkdtemp()
-        self.persistent_data_dir = os.path.join(self.test_dir, 'persistent_data')
-        
-        # Create test wallet
-        self.wallet = KrakenWallet("EUR", "test_key", "test_secret")
-        self.wallet.persistent_data_dir = self.persistent_data_dir
-    
-    def tearDown(self):
-        """Clean up test fixtures."""
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-
 
 if __name__ == '__main__':
     # Run tests
