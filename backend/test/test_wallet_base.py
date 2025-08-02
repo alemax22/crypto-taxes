@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 from wallets.wallet import Wallet
 
-class TestImplementationWallet(Wallet):
+class MockWallet(Wallet):
     """Concrete implementation of Wallet for testing abstract methods."""
     
     def __init__(self, name: str, reference_fiat: str, api_key: str = None, api_secret: str = None):
@@ -51,7 +51,7 @@ class TestWalletBaseMethods(unittest.TestCase):
         os.makedirs(self.persistent_data_dir, exist_ok=True)
         
         # Create test wallet instance
-        self.wallet = TestImplementationWallet("TestImplementationWallet", "EUR")
+        self.wallet = MockWallet("MockWallet", "EUR")
         
         # Set up ledger file path
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "test_ledger.parquet")
@@ -392,7 +392,7 @@ class TestWalletBaseMethods(unittest.TestCase):
         self.assertIsInstance(result, pd.DataFrame)
         self.assertTrue(result.empty)
     
-    @patch.object(TestImplementationWallet, '_get_ohlc_data')
+    @patch.object(MockWallet, '_get_ohlc_data')
     def test_get_balance_with_valid_data(self, mock_get_ohlc_data):
         """Test get_balance with valid ledger data."""
         # Set wallet as synchronized
