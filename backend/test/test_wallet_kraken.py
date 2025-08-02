@@ -331,7 +331,8 @@ class TestKrakenWallet(unittest.TestCase):
             {'asset': 'ADA', 'price': 2.5}
         ]
         num_assets = len(assets_list)
-        timestamps_list = [start_timestamp + (i // num_assets) * RESAMPLING_INTERVAL_IN_SECONDS for i in range(num_days * num_assets)]
+        aligned_start_timestamp = (start_timestamp // RESAMPLING_INTERVAL_IN_SECONDS) * RESAMPLING_INTERVAL_IN_SECONDS
+        timestamps_list = [aligned_start_timestamp + (i // num_assets) * RESAMPLING_INTERVAL_IN_SECONDS for i in range(num_days * num_assets)]
         dates_list = [datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') for timestamp in timestamps_list]
         test_ohlc_data = pd.DataFrame({
             'asset': [asset['asset'] for asset in assets_list] * num_days,

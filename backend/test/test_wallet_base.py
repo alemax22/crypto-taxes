@@ -10,7 +10,7 @@ import pandas as pd
 import os
 import tempfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 # Add the parent directory to Python path to import backend modules
@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 from wallets.wallet import Wallet
 
-class TestWallet(Wallet):
+class TestImplementationWallet(Wallet):
     """Concrete implementation of Wallet for testing abstract methods."""
     
     def __init__(self, name: str, reference_fiat: str, api_key: str = None, api_secret: str = None):
@@ -51,7 +51,7 @@ class TestWalletBaseMethods(unittest.TestCase):
         os.makedirs(self.persistent_data_dir, exist_ok=True)
         
         # Create test wallet instance
-        self.wallet = TestWallet("TestWallet", "EUR")
+        self.wallet = TestImplementationWallet("TestImplementationWallet", "EUR")
         
         # Set up ledger file path
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "test_ledger.parquet")
@@ -392,21 +392,19 @@ class TestWalletBaseMethods(unittest.TestCase):
         self.assertIsInstance(result, pd.DataFrame)
         self.assertTrue(result.empty)
     
-    @patch.object(TestWallet, '_get_ohlc_data')
+    @patch.object(TestImplementationWallet, '_get_ohlc_data')
     def test_get_balance_with_valid_data(self, mock_get_ohlc_data):
         """Test get_balance with valid ledger data."""
         # Set wallet as synchronized
         self.wallet.last_sync = datetime.now()
         
-        start_timestamp = datetime(2022, 1, 1, 0, 0, 0).timestamp()
-
         # Create test ledger data with multiple transactions for same assets
         datetime_list = [
-            datetime(2022, 1, 1, 12, 0, 0),  # Old transaction
-            datetime(2022, 1, 2, 12, 0, 0),  # Newer transaction
-            datetime(2022, 1, 3, 12, 0, 0),  # Latest transaction
-            datetime(2022, 1, 1, 12, 0, 0),  # Old transaction for ETH
-            datetime(2022, 1, 2, 12, 0, 0),  # Latest transaction for ETH
+            datetime(2022, 1, 1, 12, 6, 9, tzinfo=timezone.utc), 
+            datetime(2022, 1, 2, 12, 18, 6, tzinfo=timezone.utc),  
+            datetime(2022, 1, 3, 12, 3, 45, tzinfo=timezone.utc),  # Latest transaction for BTC
+            datetime(2022, 1, 1, 12, 7, 0, tzinfo=timezone.utc),  
+            datetime(2022, 1, 2, 12, 23, 59, tzinfo=timezone.utc),  # Latest transaction for ETH
         ]
         asset_list = ['BTC', 'BTC', 'BTC', 'ETH', 'ETH']
         asset_price_in_reference_fiat_list = ['50000.0', '51000.0', '52000.0', '3000.0', '3100.0']
@@ -463,22 +461,23 @@ class TestWalletBaseMethods(unittest.TestCase):
         self.assertEqual(eth_row['balance'], 3.0)  # Latest balance for ETH
         
         # Verify price calculations
-        self.assertEqual(btc_row['asset_price_in_reference_fiat'], 52000.0)
-        self.assertEqual(eth_row['asset_price_in_reference_fiat'], 3100.0)
+        self.assertEqual(btc_row['asset_price_in_reference_fiat'], Decimal('150000.0'))
+        self.assertEqual(eth_row['asset_price_in_reference_fiat'], Decimal('10000.0'))
         
         # Verify balance in reference fiat calculations
-        expected_btc_balance_fiat = 0.6 * 52000.0
-        expected_eth_balance_fiat = 3.0 * 3100.0
+        expected_btc_balance_fiat = 0.6 * 150000.0
+        expected_eth_balance_fiat = 3.0 * 10000.0
         self.assertEqual(btc_row['balance_in_reference_fiat'], round(expected_btc_balance_fiat, 2))
         self.assertEqual(eth_row['balance_in_reference_fiat'], round(expected_eth_balance_fiat, 2))
 
     def _simulate_ohlc_data(self, start_timestamp, num_days):
         assets_list = [
-            {'asset': 'BTC', 'price': 50000.0},
-            {'asset': 'ETH', 'price': 3000.0},
+            {'asset': 'BTC', 'price': 150000.0},
+            {'asset': 'ETH', 'price': 10000.0},
         ]
         num_assets = len(assets_list)
-        timestamps_list = [start_timestamp + (i // num_assets) * RESAMPLING_INTERVAL_IN_SECONDS for i in range(num_days * num_assets)]
+        aligned_start_timestamp = (start_timestamp // RESAMPLING_INTERVAL_IN_SECONDS) * RESAMPLING_INTERVAL_IN_SECONDS
+        timestamps_list = [aligned_start_timestamp + (i // num_assets) * RESAMPLING_INTERVAL_IN_SECONDS for i in range(num_days * num_assets)]
         dates_list = [datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') for timestamp in timestamps_list]
         test_ohlc_data = pd.DataFrame({
             'asset': [asset['asset'] for asset in assets_list] * num_days,
