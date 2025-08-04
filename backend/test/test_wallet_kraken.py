@@ -5,6 +5,7 @@ Tests the Kraken wallet implementation with mocked API calls
 """
 
 import unittest
+import pytest
 from unittest.mock import Mock, patch, MagicMock, mock_open
 import pandas as pd
 import json
@@ -22,6 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from wallets.wallet_kraken import KrakenWallet, EXCEPTION_ASSETS
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 
+@pytest.mark.unit
 class TestKrakenWallet(unittest.TestCase):
     """Test cases for KrakenWallet class."""
     

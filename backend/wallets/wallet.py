@@ -7,14 +7,20 @@ Base class for all wallet/exchange implementations
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from decimal import Decimal, InvalidOperation
 import pandas as pd
 import logging
 import os
+import sys
 import numpy as np
 
-logger = logging.getLogger(__name__)
+# Add parent directory to path to import config module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-RESAMPLING_INTERVAL = 60*60*24 # 1 day
+from config import RESAMPLING_INTERVAL_IN_SECONDS
+from config import TRANSACTION_REQUIRED_COLUMNS
+
+logger = logging.getLogger(__name__)
 
 class Wallet(ABC):
     """
@@ -132,7 +138,7 @@ class Wallet(ABC):
             if not existing_df.empty:
                 existing_df.sort_values(by="datetime", ascending=False, inplace=True)
                 balance_df = existing_df.groupby("asset")["balance"].first().reset_index()
-                balance_df["timestamp"] = (datetime.now().timestamp() - RESAMPLING_INTERVAL) // RESAMPLING_INTERVAL * RESAMPLING_INTERVAL
+                balance_df["timestamp"] = (datetime.now().timestamp() - RESAMPLING_INTERVAL_IN_SECONDS) // RESAMPLING_INTERVAL_IN_SECONDS * RESAMPLING_INTERVAL_IN_SECONDS
                 
                 # Get unique assets from transactions for OHLC data
                 assets_in_transactions = balance_df["asset"].unique().tolist()
@@ -142,6 +148,10 @@ class Wallet(ABC):
                     assets_in_portfolio=assets_in_transactions,
                 )
 
+                # Convert price to float
+                ohlc_df["price"] = ohlc_df["price"].astype(float)
+
+                # Reset index
                 ohlc_df.reset_index(inplace=True)
 
                 # Merge the DataFrames on both asset and timestamp
@@ -153,8 +163,10 @@ class Wallet(ABC):
                     suffixes=('', '_ohlc')
                 )
                 
-                balance_df["asset_price_in_reference_fiat"] = balance_df["price"]
-                balance_df["balance_in_reference_fiat"] = balance_df["balance"] * balance_df["asset_price_in_reference_fiat"]
+                # Asset price in reference fiat MUST be a Decimal as of our column definition
+                balance_df["asset_price_in_reference_fiat"] = balance_df["price"].apply(self._decimal_from_value)
+                # The conversion to float is an overhead, but we keep it to maintain consistency in the column definitions
+                balance_df["balance_in_reference_fiat"] = balance_df["balance"] * balance_df["asset_price_in_reference_fiat"].astype(float)
                 # Convert to float first, then round
                 balance_df["balance_in_reference_fiat"] = balance_df["balance_in_reference_fiat"].astype(float).round(2)
                 balance_df = balance_df.drop(columns=["price"])
@@ -199,22 +211,26 @@ class Wallet(ABC):
     def _retrieve_local_ledger_data(self) -> pd.DataFrame:
         """Retrieve local ledger data."""
 
-        existing_df = pd.DataFrame()
+        result_df = pd.DataFrame(columns=TRANSACTION_REQUIRED_COLUMNS)
 
         if os.path.exists(self.ledger_file):
             try:
-                existing_df = pd.read_parquet(self.ledger_file, engine="fastparquet")
+                existing_df = pd.read_parquet(self.ledger_file, engine="fastparquet", columns=TRANSACTION_REQUIRED_COLUMNS)
+                
                 # Convert columns to Decimal (parquet does not support Decimal)
                 existing_df["amount"] = existing_df["amount"].apply(self._decimal_from_value)
                 existing_df["fee"] = existing_df["fee"].apply(self._decimal_from_value)
                 existing_df["asset_price_in_reference_fiat"] = existing_df["asset_price_in_reference_fiat"].apply(self._decimal_from_value)
-                
+
+                # If the conversion is successful, return the existing dataframe
+                result_df = existing_df
+
                 logger.info(f"Loaded {len(existing_df)} existing transactions")
             except Exception as e:
-                    logger.warning(f"Error loading existing ledger data: {e}")
+                logger.error(f"Error loading existing ledger data: {e}")
         else:
             logger.info(f"No local ledger data found in {self.ledger_file}")
-        return existing_df
+        return result_df
 
     def _save_local_ledger_data(self, df: pd.DataFrame) -> None:
         """Save local ledger data to file."""
@@ -237,6 +253,9 @@ class Wallet(ABC):
                 'asset_original_balance': 'string'
             })
             
+            # Check that the dataframe has all the required columns
+            ledger_parquet_df = ledger_parquet_df[TRANSACTION_REQUIRED_COLUMNS]
+
             # Save to file
             ledger_parquet_df.to_parquet(self.ledger_file, engine="fastparquet", compression="GZIP")
             
@@ -246,6 +265,10 @@ class Wallet(ABC):
     def __str__(self) -> str:
         """String representation of the wallet."""
         return f"{self.name} Wallet (Authenticated: {self.is_authenticated}, Last Sync: {self.last_sync})"
+    
+    def _decimal_from_value(self, value: Any) -> Decimal:
+        """Convert value to Decimal."""
+        return Decimal(value)
     
     def __repr__(self) -> str:
         """Detailed string representation of the wallet."""

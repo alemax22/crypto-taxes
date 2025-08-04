@@ -73,7 +73,7 @@ pytest test_wallet_kraken.py::TestKrakenWallet
 pytest test_wallet_kraken.py::TestKrakenWallet::test_authenticate_success
 
 # Run with coverage
-pytest --cov=wallets --cov-report=term-missing
+pytest --cov=portfolio --cov-report=term-missing
 
 # Run with markers
 pytest -m unit
@@ -104,7 +104,7 @@ python -m unittest test_wallet_kraken.TestKrakenWallet.test_authenticate_success
 The tests mock HTTP requests to avoid making real API calls:
 
 ```python
-@patch('wallets.wallet_kraken.requests.post')
+@patch('portfolio.wallet_kraken.requests.post')
 def test_authenticate_success(self, mock_post):
     # Mock successful API response
     mock_response = Mock()
@@ -130,7 +130,7 @@ def test_authenticate_success(self, mock_post):
 File operations are mocked to avoid creating real files:
 
 ```python
-@patch('wallets.wallet_kraken.pd.read_parquet')
+@patch('portfolio.wallet_kraken.pd.read_parquet')
 def test_get_transactions_success(self, mock_read_parquet):
     # Mock existing ledger data
     mock_ledger_data = pd.DataFrame({...})
@@ -148,7 +148,7 @@ def test_get_transactions_success(self, mock_read_parquet):
 Encryption/decryption operations are mocked:
 
 ```python
-@patch('wallets.wallet_kraken.Fernet')
+@patch('portfolio.wallet_kraken.Fernet')
 def test_decrypt_message(self, mock_fernet):
     # Mock Fernet
     mock_fernet_instance = Mock()
@@ -341,7 +341,7 @@ When adding new functionality to `KrakenWallet`:
 def test_new_method_success(self):
     """Test successful execution of new method."""
     # Mock dependencies
-    with patch('wallets.wallet_kraken.requests.post') as mock_post:
+    with patch('portfolio.wallet_kraken.requests.post') as mock_post:
         mock_response = Mock()
         mock_response.json.return_value = {'result': 'success'}
         mock_post.return_value = mock_response
@@ -356,7 +356,7 @@ def test_new_method_success(self):
 def test_new_method_failure(self):
     """Test failure case of new method."""
     # Mock failure
-    with patch('wallets.wallet_kraken.requests.post') as mock_post:
+    with patch('portfolio.wallet_kraken.requests.post') as mock_post:
         mock_post.side_effect = Exception("Network error")
         
         # Test method

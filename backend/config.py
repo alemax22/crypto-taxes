@@ -2,8 +2,23 @@
 Configuration file for Italian Crypto Tax Calculator 2025
 Contains tax rates, thresholds, and other settings.
 """
+import os
 
-# Tax year
+# RESAMPLING INTERVAL
+RESAMPLING_INTERVAL_IN_SECONDS = 60*60*24 # 1 day in seconds
+
+# REQUIRED COLUMNS FOR TRANSACTIONS
+TRANSACTION_REQUIRED_COLUMNS = [
+    "datetime", "transaction_id", "correlation_id", "transaction_type",
+    "asset", "amount", "balance", "asset_price_in_reference_fiat", "fee",
+    "transaction_original_type", "asset_original_name", "asset_original_balance"
+]
+
+PERSISTENT_DATA_DIR = "/app/persistent_data"
+WALLETS_DIR = os.path.join(PERSISTENT_DATA_DIR, "wallets")
+
+# TO BE REMOVED  ####################################################################################
+# # Tax year
 TAX_YEAR = 2025
 
 # Italian crypto tax rates for 2025

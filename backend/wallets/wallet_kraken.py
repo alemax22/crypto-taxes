@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import base64
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 import logging
@@ -23,13 +23,13 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from wallets.wallet import Wallet
+from config import RESAMPLING_INTERVAL_IN_SECONDS, WALLETS_DIR
 
 logger = logging.getLogger(__name__)
 
-RESAMPLING_INTERVAL = 60*60*24 # 1 day
 EXCEPTION_ASSETS = ["KFEE", "NFT"]
 TX_BATCH_SIZE = 50
-SLEEPING_TIME = 4 # seconds after every call to refill the call limit counter
+KRAKEN_SLEEPING_TIME = 4 # seconds after every call to refill the call limit counter
 
 class KrakenWallet(Wallet):
     """
@@ -52,11 +52,10 @@ class KrakenWallet(Wallet):
         
         # Kraken-specific settings
         self.base_url = 'https://api.kraken.com'
-        self.persistent_data_dir = '/app/persistent_data'
         
         # Data file paths
-        self.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")
-        self.ohlc_file = os.path.join(self.persistent_data_dir, "data", "kraken_ohlc.parquet")
+        self.ledger_file = os.path.join(WALLETS_DIR, "kraken_ledger.parquet")
+        self.ohlc_file = os.path.join(WALLETS_DIR, "kraken_ohlc.parquet")
         
         logger.info("Kraken wallet initialized")
     
@@ -101,7 +100,7 @@ class KrakenWallet(Wallet):
         3. Return synchronization status and metadata
         
         Args:
-            start_date: Start date for data synchronization (YYYY-MM-DD format)
+            start_date: Start date for data synchronization (YYYY-MM-DD format in GMT timezone)
             
         Returns:
             bool: True if synchronization was successful, False otherwise
@@ -192,7 +191,7 @@ class KrakenWallet(Wallet):
             existing_df = self._retrieve_local_ledger_data()
 
             if existing_df.empty:
-                start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+                start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
             else:
                 start_timestamp = int(existing_df["datetime"].max().timestamp())
 
@@ -284,6 +283,7 @@ class KrakenWallet(Wallet):
         result_df["asset"] = result_df["asset"].apply(self._normalize_asset_name)
         result_df["amount"] = result_df["amount"].apply(self._decimal_from_value)
         result_df["asset_original_balance"] = result_df["balance"]
+        
         # Calculate running balance per asset (sorted by datetime)
         result_df = result_df.sort_values(["asset", "datetime"])
         result_df["temp_amount"] = result_df["amount"].astype(float)
@@ -467,7 +467,7 @@ class KrakenWallet(Wallet):
         result_df = transactions_df.copy()
         result_df["ts"] = result_df["datetime"].apply(lambda x: int(x.timestamp()))
         # Resample the timestamp to the nearest minute
-        result_df["timestamp"] = result_df["ts"]//RESAMPLING_INTERVAL*RESAMPLING_INTERVAL
+        result_df["timestamp"] = (result_df["ts"] // RESAMPLING_INTERVAL_IN_SECONDS) * RESAMPLING_INTERVAL_IN_SECONDS
 
         # Reset the OHLC DataFrame index to make it easier to work with
         ohlc_df_reset = ohlc_df.reset_index()
@@ -492,10 +492,6 @@ class KrakenWallet(Wallet):
         result_df = result_df.drop(columns=['price'])
 
         return result_df
-    
-    def _decimal_from_value(self, value: Any) -> Decimal:
-        """Convert value to Decimal."""
-        return Decimal(value)
     
     def _get_kraken_signature(self, urlpath: str, data: Dict[str, Any], secret: str) -> str:
         """Generate Kraken API signature."""
@@ -571,7 +567,7 @@ class KrakenWallet(Wallet):
                 logger.info(f"Call C-{iter_num} performed")
                 if has_new_transactions:
                     logger.info("Now Sleeping...")
-                    time.sleep(SLEEPING_TIME)
+                    time.sleep(KRAKEN_SLEEPING_TIME)
                 iter_num = iter_num + 1
             else:
                 logger.error(f"ERROR {consecutive_error_counter}")
@@ -669,6 +665,7 @@ class KrakenWallet(Wallet):
         existing_ohlc_df = pd.DataFrame()
         try:
             existing_ohlc_df = pd.read_parquet(filename, engine="fastparquet")
+            existing_ohlc_df["price"] = existing_ohlc_df["price"].apply(self._decimal_from_value)
             logger.info(f"Loaded existing OHLC data: {existing_ohlc_df.shape[0]} records")
         except FileNotFoundError:
             logger.info("No existing OHLC data found")
@@ -703,10 +700,10 @@ class KrakenWallet(Wallet):
                     
                     # Check if we need to fetch new data (avoid calls for very recent timestamps)
                     current_time = datetime.now().timestamp()
-                    min_interval_seconds = 1440 * 60 * 2
+                    min_interval_seconds = RESAMPLING_INTERVAL_IN_SECONDS * 2
                     
                     if latest_timestamp is not None and (current_time - latest_timestamp) < min_interval_seconds:
-                        logger.info(f"Skipping {asset} - latest data is too recent (less than 1440 minutes ago)")
+                        logger.info(f"Skipping {asset} - latest data is too recent (less than {min_interval_seconds} seconds ago)")
                         continue
                     
                     logger.info(f"Fetching data for {asset} ({pair_altname})")
@@ -779,7 +776,6 @@ if __name__ == "__main__":
         level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
     # read api key and secret from file api.key which contains the api key and api secret one per line
     with open("api.key", "r") as file:
         api_key = file.readline().strip()

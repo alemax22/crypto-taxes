@@ -5,6 +5,7 @@ Tests the base wallet implementation methods
 """
 
 import unittest
+import pytest
 from unittest.mock import patch
 import pandas as pd
 import os
@@ -39,7 +40,7 @@ class MockWallet(Wallet):
         """Mock implementation."""
         return pd.DataFrame()
 
-
+@pytest.mark.unit
 class TestWalletBaseMethods(unittest.TestCase):
     """Test cases for base Wallet class methods."""
     

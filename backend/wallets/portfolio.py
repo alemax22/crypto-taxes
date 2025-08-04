@@ -6,33 +6,60 @@ Handles multiple wallets/exchanges for a user
 
 import os
 import csv
-import json
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from cryptography.fernet import Fernet
+import sys
 
+# Add parent directory to path to import config module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from wallets.wallet import Wallet
 from wallets.wallet_kraken import KrakenWallet
+from config import WALLETS_DIR
 
 logger = logging.getLogger(__name__)
 
-WALLETS_CSV_FILE_PATH = "wallets.csv"
-ENCRYPTION_KEY_FILE_PATH = "portfolio_key.key"
+WALLETS_CSV_FILE_NAME = "wallets.csv"
+PORTFOLIO_ENCRYPTION_KEY_FILE_NAME = "portfolio_key.key"
+
+'''
+wallet_id: str - unique identifier for the wallet
+wallet_type: str - type of the wallet (Kraken, Binance, etc.)
+name: str - name of the wallet, given by the user
+description: str - description of the wallet (optional)
+api_key: str - API key for the wallet
+api_secret: str - API secret for the wallet
+is_active: bool - whether the wallet is active, wallet method authenticate() must return True. 
+                  Even though we don't save inactive wallets, it might happen that a wallet becomes inactive after being added.
+created_datetime: datetime - date and time when the wallet was created
+updated_datetime: datetime - date and time when the wallet was last updated, updated when wallet method synchronize() is called
+'''
+WALLET_CONFIG_COLUMNS = [
+            'wallet_id',
+            'wallet_type',
+            'name',
+            'description',
+            'api_key',
+            'api_secret',
+            'is_active',
+            'created_datetime',
+            'updated_datetime',
+        ]
 
 class Portfolio:
     """Portfolio class to manage multiple wallets/exchanges."""
     
     def __init__(self):
         """Initialize the portfolio."""
-        self.csv_file_path = WALLETS_CSV_FILE_PATH
+        self.csv_file_path = os.path.join(WALLETS_DIR, WALLETS_CSV_FILE_NAME)
         self.wallets_data = []
         self.wallet_types = {
             'Kraken': KrakenWallet,
         }
         
         # Encryption key file path
-        self.encryption_key_file = ENCRYPTION_KEY_FILE_PATH
+        self.encryption_key_file = os.path.join(WALLETS_DIR, PORTFOLIO_ENCRYPTION_KEY_FILE_NAME)
         
         # Ensure the directory exists
         os.makedirs(os.path.dirname(self.csv_file_path), exist_ok=True)
@@ -41,7 +68,7 @@ class Portfolio:
         self._initialize_encryption()
         
         # Load existing wallets
-        self._load_wallets_from_csv()
+        self._load_wallets()
         
         logger.info(f"Portfolio initialized with {len(self.wallets_data)} wallets")
     
@@ -119,7 +146,7 @@ class Portfolio:
             logger.error(f"Error decrypting API credentials: {e}")
             raise
     
-    def _load_wallets_from_csv(self) -> None:
+    def _load_wallets(self) -> None:
         """Load wallet configurations from CSV file."""
         if not os.path.exists(self.csv_file_path):
             logger.info(f"CSV file {self.csv_file_path} does not exist. Creating new file.")
@@ -156,22 +183,10 @@ class Portfolio:
     
     def _create_csv_file(self) -> None:
         """Create a new CSV file with the proper headers."""
-        headers = [
-            'wallet_id',
-            'wallet_type',
-            'name',
-            'description',
-            'api_key',
-            'api_secret',
-            'is_active',
-            'created_date',
-            'last_updated',
-            'notes'
-        ]
         
         try:
             with open(self.csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                writer = csv.DictWriter(csvfile, fieldnames=WALLET_CONFIG_COLUMNS)
                 writer.writeheader()
             logger.info(f"Created new CSV file: {self.csv_file_path}")
         except Exception as e:
@@ -181,19 +196,6 @@ class Portfolio:
         """Save wallet configurations to CSV file."""
         if not self.wallets_data:
             return
-        
-        headers = [
-            'wallet_id',
-            'wallet_type',
-            'name',
-            'description',
-            'api_key',
-            'api_secret',
-            'is_active',
-            'created_date',
-            'last_updated',
-            'notes'
-        ]
         
         try:
             # Create a copy of wallets data with encrypted credentials
@@ -218,7 +220,7 @@ class Portfolio:
                 encrypted_wallets.append(encrypted_wallet)
             
             with open(self.csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                writer = csv.DictWriter(csvfile, fieldnames=WALLET_CONFIG_COLUMNS)
                 writer.writeheader()
                 writer.writerows(encrypted_wallets)
             logger.info(f"Saved {len(encrypted_wallets)} wallets to CSV")
@@ -282,8 +284,7 @@ class Portfolio:
                    name: str, 
                    api_key: str, 
                    api_secret: str, 
-                   description: str = "", 
-                   notes: str = "") -> Optional[str]:
+                   description: str = "") -> Optional[str]:
         """Add a new wallet to the portfolio."""
         if wallet_type not in self.wallet_types:
             logger.error(f"Unsupported wallet type: {wallet_type}")
@@ -305,10 +306,9 @@ class Portfolio:
             'description': description,
             'api_key': api_key,
             'api_secret': api_secret,
-            'is_active': 'true',
-            'created_date': datetime.now().isoformat(),
-            'last_updated': datetime.now().isoformat(),
-            'notes': notes
+            'is_active': False,
+            'created_datetime': datetime.now().isoformat(),
+            'updated_datetime': None,
         }
         
         try:
@@ -319,9 +319,11 @@ class Portfolio:
                 return None
             
             # Test authentication
-            if not wallet_instance.authenticate():
-                logger.warning(f"Authentication failed for wallet {name}. Wallet will be added but marked as inactive.")
-                wallet_config['is_active'] = 'false'
+            if wallet_instance.authenticate():
+                wallet_config['is_active'] = True
+            else:
+                logger.error(f"Authentication failed for wallet {name}. Wallet will not be added.")
+                return None
             
             # Add to portfolio
             self.wallets_data.append(wallet_config)
@@ -347,19 +349,6 @@ class Portfolio:
         logger.error(f"Wallet with ID {wallet_id} not found")
         return False
     
-    def get_active_wallets(self) -> List[Dict[str, Any]]:
-        """Get list of active wallets."""
-        active_wallets = []
-        for wallet in self.wallets_data:
-            if wallet.get('is_active', 'false').lower() == 'true':
-                safe_wallet = wallet.copy()
-                # Remove sensitive data
-                safe_wallet.pop('api_key', None)
-                safe_wallet.pop('api_secret', None)
-                active_wallets.append(safe_wallet)
-        
-        return active_wallets
-    
     def synchronize_all_wallets(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
         """
         Synchronize all active wallets.
@@ -372,9 +361,10 @@ class Portfolio:
             Dictionary with synchronization results for each wallet
         """
         results = {}
-        active_wallets = self.get_active_wallets()
         
-        for wallet_config in active_wallets:
+        # TODO: Parallelize the synchronization
+
+        for wallet_config in self.wallets_data:
             wallet_id = wallet_config['wallet_id']
             wallet_name = wallet_config['name']
             
@@ -382,22 +372,35 @@ class Portfolio:
                 wallet_instance = self.load_wallet(wallet_id)
                 if wallet_instance:
                     logger.info(f"Synchronizing wallet: {wallet_name}")
-                    success, error = wallet_instance.synchronize(start_date, end_date)
-                    results[wallet_id] = {
-                        'name': wallet_name,
-                        'success': success,
-                        'error': error
-                    }
+                    # Check if wallet is active
+                    is_active = wallet_instance.authenticate()
+                    if is_active:                    
+                        success, error = wallet_instance.synchronize(start_date, end_date)
+                        logging.info(f"Synchronization result for wallet {wallet_name}: {success} {error}")
+                        results[wallet_id] = {
+                            'name': wallet_name,
+                            'success': success,
+                            'error': error
+                        }
+                    else:
+                        logger.error(f"Authentication failed for wallet {wallet_name}. Skipping synchronization.")
+                        results[wallet_id] = {
+                            'name': wallet_name,
+                            'success': 'failed',
+                            'error': 'Authentication failed'
+                        }
+                    _, wallet_config['updated_datetime'] = wallet_instance.get_sync_status()
+                    wallet_config['is_active'] = is_active
                 else:
                     results[wallet_id] = {
                         'name': wallet_name,
-                        'success': False,
+                        'success': 'failed',
                         'error': 'Failed to load wallet instance'
                     }
             except Exception as e:
                 results[wallet_id] = {
                     'name': wallet_name,
-                    'success': False,
+                    'success': 'failed',
                     'error': str(e)
                 }
         
@@ -416,3 +419,23 @@ class Portfolio:
             counter += 1
         
         return wallet_id
+    
+if __name__ == "__main__":
+     # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    with open("api.key", "r") as file:
+        api_key = file.readline().strip()
+        api_secret = file.readline().strip()
+    logging.info(f"API key and secret loaded")
+    portfolio = Portfolio()
+    logging.info(portfolio.list_wallets())
+    portfolio.add_wallet(
+        wallet_type="Kraken",
+        name="Kraken Ale",
+        api_key=api_key,
+        api_secret=api_secret
+    )
+    print(portfolio.list_wallets())

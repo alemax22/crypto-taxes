@@ -20,7 +20,7 @@ pip install cryptography pandas requests
 ### 2. Basic Usage
 
 ```python
-from wallets.portfolio import Portfolio
+from portfolio.portfolio import Portfolio
 
 # Initialize portfolio
 portfolio = Portfolio()

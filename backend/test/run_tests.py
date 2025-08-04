@@ -24,7 +24,7 @@ def run_tests(test_type='all', coverage=True, verbose=True):
     
     # Add coverage if requested
     if coverage:
-        cmd.extend(['--cov=wallets', '--cov-report=term-missing'])
+        cmd.extend(['--cov=portfolio', '--cov-report=term-missing'])
     
     # Add verbose flag
     if verbose:
