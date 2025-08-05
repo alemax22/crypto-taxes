@@ -40,7 +40,16 @@ class KrakenWallet(Wallet):
     and balance retrieval.
     """
     
-    def __init__(self, reference_fiat: str, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(self,
+                 name: str,
+                 id: str,
+                 reference_fiat: str,
+                 description: str = "",
+                 api_key: Optional[str] = None,
+                 api_secret: Optional[str] = None,
+                 is_active: bool = False, 
+                 last_sync: Optional[datetime] = None, 
+                 sync_status: str = "not synchronized"):
         """
         Initialize Kraken wallet.
         
@@ -48,7 +57,7 @@ class KrakenWallet(Wallet):
             api_key: Kraken API key
             api_secret: Kraken API secret
         """
-        super().__init__("Kraken", reference_fiat, api_key, api_secret)
+        super().__init__(name, id, reference_fiat, description, api_key, api_secret, is_active, last_sync, sync_status)
         
         # Kraken-specific settings
         self.base_url = 'https://api.kraken.com'
@@ -67,12 +76,12 @@ class KrakenWallet(Wallet):
             bool: True if authentication successful, False otherwise
         """
 
-        self.is_authenticated = False
+        self.is_active = False
         
         try:
             if not self.api_key or not self.api_secret:
                 logger.error("Kraken: Missing API credentials")
-                return self.is_authenticated
+                return self.is_active
             
             # Test authentication by getting balance
             test_start_timestamp = int(datetime.now().timestamp())
@@ -80,15 +89,15 @@ class KrakenWallet(Wallet):
             
             if 'error' in ledger_response_json and ledger_response_json['error']:
                 logger.error(f"Kraken authentication failed: {ledger_response_json['error']}")
-                return self.is_authenticated
+                return self.is_active
             
-            self.is_authenticated = True
+            self.is_active = True
             logger.info("Kraken authentication successful")
-            return self.is_authenticated
+            return self.is_active
             
         except Exception as e:
             logger.error(f"Kraken authentication error: {str(e)}")
-            return self.is_authenticated
+            return self.is_active
 
     def synchronize(self, start_date: Optional[str] = None) -> tuple[bool, Optional[str]]:
         """
@@ -134,7 +143,7 @@ class KrakenWallet(Wallet):
             self.sync_status = "in progress"
             
             # Check authentication
-            if not self.is_authenticated:
+            if not self.is_active:
                 if not self.authenticate():
                     self.sync_status = "failed"
                     return False, "Authentication failed"

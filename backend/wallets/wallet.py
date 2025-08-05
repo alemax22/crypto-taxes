@@ -31,27 +31,43 @@ class Wallet(ABC):
     and management.
     """
     
-    def __init__(self, name: str, reference_fiat: str, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(self, 
+                name: str,
+                id: str,
+                reference_fiat: str,
+                description: str = "", 
+                api_key: Optional[str] = None,
+                api_secret: Optional[str] = None,
+                is_active: bool = False,
+                last_sync: Optional[datetime] = None,
+                sync_status: str = "not synchronized"):
         """
         Initialize the wallet.
         
         Args:
             name: Name of the wallet/exchange
+            id: ID of the wallet/exchange
+            reference_fiat: Reference fiat of the wallet/exchange
+            description: Description of the wallet/exchange (optional)
             api_key: API key for authentication (optional)
             api_secret: API secret for authentication (optional)
+            is_active: Whether the wallet is active (optional)
+            last_sync: Last synchronization timestamp (optional)
+            sync_status: Status of the synchronization process (optional):
+                - not synchronized: the wallet has not been synchronized yet
+                - in progress: the synchronization is in progress
+                - completed: the synchronization has been completed
+                - failed: the synchronization has failed
         """
         self.name = name
+        self.description = description
+        self.id = id
         self.reference_fiat = reference_fiat
         self.api_key = api_key
         self.api_secret = api_secret
-        self.last_sync = None
-        self.is_authenticated = False
-        # Status of the synchronization process
-        # - not synchronized: the wallet has not been synchronized yet
-        # - in progress: the synchronization is in progress
-        # - completed: the synchronization has been completed
-        # - failed: the synchronization has failed
-        self.sync_status = "not synchronized"
+        self.is_active = is_active
+        self.last_sync = last_sync
+        self.sync_status = sync_status
         
         logger.info(f"Initialized {self.name} wallet")
     
@@ -104,19 +120,7 @@ class Wallet(ABC):
 
         """
         return False, None
-    
-    @abstractmethod
-    def authenticate(self) -> bool:
-        """
-        Validate that the wallet has the necessary credentials and that they are valid.
-        This method should be used to validate the credentials before attempting to synchronize data.
-        In case of API tokens, it should check that they have all the necessary permissions.
 
-        Returns:
-            bool: True if credentials are present and valid, False otherwise
-        """
-        return False
-    
     def get_balance(self) -> pd.DataFrame:
         """
         Get current balance from the local data.
@@ -191,6 +195,16 @@ class Wallet(ABC):
         """
         return pd.DataFrame()
 
+    @abstractmethod
+    def authenticate(self) -> bool:
+        """
+        Validate that the wallet has the necessary credentials and that they are valid.
+        This method should be used to validate the credentials before attempting to synchronize data.
+        In case of API tokens, it should check that they have all the necessary permissions.
+        """
+        self.is_active = False
+
+        return self.is_active
 
     @abstractmethod
     def _get_ohlc_data(self, assets_in_portfolio: List[str], start_date: Optional[str] = None) -> pd.DataFrame:
@@ -264,7 +278,7 @@ class Wallet(ABC):
 
     def __str__(self) -> str:
         """String representation of the wallet."""
-        return f"{self.name} Wallet (Authenticated: {self.is_authenticated}, Last Sync: {self.last_sync})"
+        return f"{self.name} Wallet (Authenticated: {self.is_active}, Last Sync: {self.last_sync})"
     
     def _decimal_from_value(self, value: Any) -> Decimal:
         """Convert value to Decimal."""
@@ -272,4 +286,4 @@ class Wallet(ABC):
     
     def __repr__(self) -> str:
         """Detailed string representation of the wallet."""
-        return f"Wallet(name='{self.name}', authenticated={self.is_authenticated}, last_sync={self.last_sync})" 
+        return f"Wallet(name='{self.name}', authenticated={self.is_active}, last_sync={self.last_sync})" 

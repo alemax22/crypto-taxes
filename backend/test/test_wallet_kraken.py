@@ -39,7 +39,7 @@ class TestKrakenWallet(unittest.TestCase):
         self.test_api_secret = "test_api_secret_67890"
         
         # Create test wallet instance
-        self.wallet = KrakenWallet("EUR", self.test_api_key, self.test_api_secret)
+        self.wallet = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", self.test_api_key, self.test_api_secret)
         
         # Override ledger file path for testing (keep filename, change base folder)
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")
@@ -54,10 +54,13 @@ class TestKrakenWallet(unittest.TestCase):
     
     def test_init(self):
         """Test wallet initialization."""
-        self.assertEqual(self.wallet.name, "Kraken")
+        self.assertEqual(self.wallet.name, "My Kraken Wallet Name")
+        self.assertEqual(self.wallet.id, "KRAKEN-1")
+        self.assertEqual(self.wallet.reference_fiat, "EUR")
+        self.assertEqual(self.wallet.description, "My Kraken Wallet Description")
         self.assertEqual(self.wallet.api_key, self.test_api_key)
         self.assertEqual(self.wallet.api_secret, self.test_api_secret)
-        self.assertFalse(self.wallet.is_authenticated)
+        self.assertFalse(self.wallet.is_active)
         self.assertIsNone(self.wallet.last_sync)
     
     @patch.object(KrakenWallet, '_get_ledger')
@@ -88,7 +91,7 @@ class TestKrakenWallet(unittest.TestCase):
         
         # Verify results
         self.assertTrue(result)
-        self.assertTrue(self.wallet.is_authenticated)
+        self.assertTrue(self.wallet.is_active)
         
         # Verify the method was called
         mock_get_ledger.assert_called_once()
@@ -97,22 +100,22 @@ class TestKrakenWallet(unittest.TestCase):
     def test_authenticate_failure_missing_credentials(self, mock_post):
         """Test authentication failure with missing credentials."""
         # Test with missing credentials
-        wallet1 = KrakenWallet("EUR")
+        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description")
         result1 = wallet1.authenticate()
         self.assertFalse(result1)
-        self.assertFalse(wallet1.is_authenticated)
+        self.assertFalse(wallet1.is_active)
 
         # Test with missing API key
-        wallet2 = KrakenWallet("EUR", api_key=None, api_secret="test_api_secret_67890")
+        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key=None, api_secret="test_api_secret_67890")
         result2 = wallet2.authenticate()
         self.assertFalse(result2)
-        self.assertFalse(wallet2.is_authenticated)
+        self.assertFalse(wallet2.is_active)
 
         # Test with missing API secret
-        wallet3 = KrakenWallet("EUR", api_key="test_api_key_12345", api_secret=None)
+        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="test_api_key_12345", api_secret=None)
         result3 = wallet3.authenticate()
         self.assertFalse(result3)
-        self.assertFalse(wallet3.is_authenticated)
+        self.assertFalse(wallet3.is_active)
 
         # Verify no API call was made
         mock_post.assert_not_called()
@@ -121,22 +124,22 @@ class TestKrakenWallet(unittest.TestCase):
     def test_authenticate_failure_empty_credentials(self, mock_post):
         """Test authentication failure with empty string credentials."""
         # Test with empty API key
-        wallet1 = KrakenWallet("EUR", api_key="", api_secret="test_secret")
+        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="", api_secret="test_secret")
         result1 = wallet1.authenticate()
         self.assertFalse(result1)
-        self.assertFalse(wallet1.is_authenticated)
+        self.assertFalse(wallet1.is_active)
         
         # Test with empty API secret
-        wallet2 = KrakenWallet("EUR", api_key="test_key", api_secret="")
+        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="test_key", api_secret="")
         result2 = wallet2.authenticate()
         self.assertFalse(result2)
-        self.assertFalse(wallet2.is_authenticated)
+        self.assertFalse(wallet2.is_active)
         
         # Test with both empty
-        wallet3 = KrakenWallet("EUR", api_key="", api_secret="")
+        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="", api_secret="")
         result3 = wallet3.authenticate()
         self.assertFalse(result3)
-        self.assertFalse(wallet3.is_authenticated)
+        self.assertFalse(wallet3.is_active)
 
         # Verify no API call was made
         mock_post.assert_not_called()
@@ -154,7 +157,7 @@ class TestKrakenWallet(unittest.TestCase):
         
         # Verify results
         self.assertFalse(result)
-        self.assertFalse(self.wallet.is_authenticated)
+        self.assertFalse(self.wallet.is_active)
     
     @patch.object(KrakenWallet, '_get_ledger')
     def test_synchronize_empty_ledger_success(self, mock_get_ledger):
@@ -193,7 +196,7 @@ class TestKrakenWallet(unittest.TestCase):
         
         # Authenticate the wallet
         self.wallet.authenticate()
-        self.assertTrue(self.wallet.is_authenticated)
+        self.assertTrue(self.wallet.is_active)
         
         # Reset mock to clear authentication call
         mock_get_ledger.reset_mock()

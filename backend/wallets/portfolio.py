@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from cryptography.fernet import Fernet
 import sys
+import uuid
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,6 +35,12 @@ is_active: bool - whether the wallet is active, wallet method authenticate() mus
                   Even though we don't save inactive wallets, it might happen that a wallet becomes inactive after being added.
 created_datetime: datetime - date and time when the wallet was created
 updated_datetime: datetime - date and time when the wallet was last updated, updated when wallet method synchronize() is called
+reference_fiat: str - reference fiat of the wallet
+sync_status: str - status of the synchronization process
+    - not synchronized: the wallet has not been synchronized yet
+    - in progress: the synchronization is in progress
+    - completed: the synchronization has been completed
+    - failed: the synchronization has failed
 '''
 WALLET_CONFIG_COLUMNS = [
             'wallet_id',
@@ -45,6 +52,8 @@ WALLET_CONFIG_COLUMNS = [
             'is_active',
             'created_datetime',
             'updated_datetime',
+            'reference_fiat',
+            'sync_status',
         ]
 
 class Portfolio:
@@ -194,8 +203,6 @@ class Portfolio:
     
     def _save_wallets_to_csv(self) -> None:
         """Save wallet configurations to CSV file."""
-        if not self.wallets_data:
-            return
         
         try:
             # Create a copy of wallets data with encrypted credentials
@@ -250,27 +257,30 @@ class Portfolio:
     def load_wallet(self, wallet_id: str) -> Optional[Wallet]:
         """Load a wallet instance by ID."""
         wallet_config = self.get_wallet_by_id(wallet_id)
+
         if not wallet_config:
             logger.error(f"Wallet with ID {wallet_id} not found")
             return None
         
-        wallet_type = wallet_config['wallet_type']
-        if wallet_type not in self.wallet_types:
-            logger.error(f"Unsupported wallet type: {wallet_type}")
-            return None
-        
+        return self._load_wallet_from_config(wallet_config)
+    
+    def _load_wallet_from_config(self, wallet_config: Dict[str, Any]) -> Optional[Wallet]:
+        """Load a wallet instance from a wallet configuration."""
         try:
             # Create wallet instance with decrypted credentials
+            wallet_type = wallet_config['wallet_type']
             wallet_class = self.wallet_types[wallet_type]
             wallet_instance = wallet_class(
+                name=wallet_config['name'],
+                id=wallet_config['wallet_id'],
+                reference_fiat=wallet_config['reference_fiat'],
+                description=wallet_config.get('description', ''),
                 api_key=wallet_config.get('api_key'),
-                api_secret=wallet_config.get('api_secret')
+                api_secret=wallet_config.get('api_secret'),
+                is_active=wallet_config.get('is_active', False),
+                last_sync=wallet_config.get('updated_datetime'),
+                sync_status=wallet_config.get('sync_status', 'not synchronized')
             )
-            
-            # Set additional attributes
-            wallet_instance.wallet_id = wallet_id
-            wallet_instance.name = wallet_config.get('name', '')
-            wallet_instance.description = wallet_config.get('description', '')
             
             logger.info(f"Loaded wallet: {wallet_config.get('name')} ({wallet_type})")
             return wallet_instance
@@ -282,8 +292,9 @@ class Portfolio:
     def add_wallet(self, 
                    wallet_type: str, 
                    name: str, 
-                   api_key: str, 
-                   api_secret: str, 
+                   reference_fiat: str,
+                   api_key: str = None, 
+                   api_secret: str = None, 
                    description: str = "") -> Optional[str]:
         """Add a new wallet to the portfolio."""
         if wallet_type not in self.wallet_types:
@@ -292,11 +303,6 @@ class Portfolio:
         
         # Generate unique wallet ID
         wallet_id = self._generate_wallet_id(wallet_type, name)
-        
-        # Check if wallet ID already exists
-        if self.get_wallet_by_id(wallet_id):
-            logger.error(f"Wallet with ID {wallet_id} already exists")
-            return None
         
         # Create wallet configuration with plain text credentials (will be encrypted when saved)
         wallet_config = {
@@ -309,11 +315,13 @@ class Portfolio:
             'is_active': False,
             'created_datetime': datetime.now().isoformat(),
             'updated_datetime': None,
+            'reference_fiat': reference_fiat,
+            'sync_status': 'not synchronized',
         }
         
         try:
             # Test the wallet by creating an instance
-            wallet_instance = self.load_wallet(wallet_id)
+            wallet_instance = self._load_wallet_from_config(wallet_config)
             if not wallet_instance:
                 logger.error("Failed to create wallet instance")
                 return None
@@ -375,7 +383,7 @@ class Portfolio:
                     # Check if wallet is active
                     is_active = wallet_instance.authenticate()
                     if is_active:                    
-                        success, error = wallet_instance.synchronize(start_date, end_date)
+                        success, error = wallet_instance.synchronize(start_date)
                         logging.info(f"Synchronization result for wallet {wallet_name}: {success} {error}")
                         results[wallet_id] = {
                             'name': wallet_name,
@@ -409,14 +417,11 @@ class Portfolio:
     def _generate_wallet_id(self, wallet_type: str, name: str) -> str:
         """Generate a unique wallet ID."""
         # Create base ID from type and name
-        base_id = f"{wallet_type.lower()}_{name.lower().replace(' ', '_')}"
+        base_id = f"{wallet_type.upper()}"
         
-        # Check if ID already exists and add suffix if needed
-        counter = 1
-        wallet_id = base_id
-        while self.get_wallet_by_id(wallet_id):
-            wallet_id = f"{base_id}_{counter}"
-            counter += 1
+        # Generate a random UUID
+        uuid_str = str(uuid.uuid4())
+        wallet_id = f"{base_id}-{uuid_str}"
         
         return wallet_id
     
@@ -432,10 +437,14 @@ if __name__ == "__main__":
     logging.info(f"API key and secret loaded")
     portfolio = Portfolio()
     logging.info(portfolio.list_wallets())
-    portfolio.add_wallet(
+    wallet_id = portfolio.add_wallet(
         wallet_type="Kraken",
         name="Kraken Ale",
+        reference_fiat="EUR",
         api_key=api_key,
         api_secret=api_secret
     )
+    results = portfolio.synchronize_all_wallets()
+    logging.info(results)
+    portfolio.remove_wallet(wallet_id)
     print(portfolio.list_wallets())

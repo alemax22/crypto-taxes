@@ -24,8 +24,8 @@ from wallets.wallet import Wallet
 class MockWallet(Wallet):
     """Concrete implementation of Wallet for testing abstract methods."""
     
-    def __init__(self, name: str, reference_fiat: str, api_key: str = None, api_secret: str = None):
-        super().__init__(name, reference_fiat, api_key, api_secret)
+    def __init__(self, name: str, id: str, reference_fiat: str, description: str = "", api_key: str = None, api_secret: str = None):
+        super().__init__(name, id, reference_fiat, description, api_key, api_secret)
         self.ledger_file = None  # Will be set in tests
     
     def synchronize(self, start_date=None):
@@ -52,7 +52,7 @@ class TestWalletBaseMethods(unittest.TestCase):
         os.makedirs(self.persistent_data_dir, exist_ok=True)
         
         # Create test wallet instance
-        self.wallet = MockWallet("MockWallet", "EUR")
+        self.wallet = MockWallet("My Mock Wallet Name", "MOCK-1", "EUR", "My Mock Wallet Description")
         
         # Set up ledger file path
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "test_ledger.parquet")
