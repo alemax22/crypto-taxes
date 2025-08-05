@@ -93,7 +93,7 @@ class Wallet(ABC):
         self.sync_status = "in progress"
         time.sleep(1)
         self.sync_status = "completed"
-        self.last_sync = datetime.now()
+        self.last_sync = datetime.now(timezone.utc)
 
         The output dataframe should have the following columns:
         - datetime: datetime

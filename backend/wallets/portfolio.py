@@ -8,7 +8,7 @@ import os
 import csv
 import logging
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from cryptography.fernet import Fernet
 import sys
 import uuid
@@ -286,7 +286,7 @@ class Portfolio:
             return wallet_instance
             
         except Exception as e:
-            logger.error(f"Error loading wallet {wallet_id}: {e}")
+            logger.error(f"Error loading wallet {wallet_config.get('wallet_id', 'unknown')}: {e}")
             return None
     
     def add_wallet(self, 
@@ -313,7 +313,7 @@ class Portfolio:
             'api_key': api_key,
             'api_secret': api_secret,
             'is_active': False,
-            'created_datetime': datetime.now().isoformat(),
+            'created_datetime': datetime.now(timezone.utc).isoformat(),
             'updated_datetime': None,
             'reference_fiat': reference_fiat,
             'sync_status': 'not synchronized',
@@ -394,21 +394,22 @@ class Portfolio:
                         logger.error(f"Authentication failed for wallet {wallet_name}. Skipping synchronization.")
                         results[wallet_id] = {
                             'name': wallet_name,
-                            'success': 'failed',
+                            'success': False,
                             'error': 'Authentication failed'
                         }
-                    _, wallet_config['updated_datetime'] = wallet_instance.get_sync_status()
+                    _, wallet_updated_datetime = wallet_instance.get_sync_status()
+                    wallet_config['updated_datetime'] = wallet_updated_datetime.isoformat()
                     wallet_config['is_active'] = is_active
                 else:
                     results[wallet_id] = {
                         'name': wallet_name,
-                        'success': 'failed',
+                        'success': False,
                         'error': 'Failed to load wallet instance'
                     }
             except Exception as e:
                 results[wallet_id] = {
                     'name': wallet_name,
-                    'success': 'failed',
+                    'success': False,
                     'error': str(e)
                 }
         

@@ -163,7 +163,7 @@ class KrakenWallet(Wallet):
                 return False, "Error synchronizing transactions"
             
             # Update last sync timestamp
-            self.last_sync = datetime.now()
+            self.last_sync = datetime.now(timezone.utc)
             self.sync_status = "completed"
             return True, None
             
