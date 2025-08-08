@@ -34,8 +34,8 @@ class MockWallet(Wallet):
         # For testing, we want wallets to authenticate successfully by default
         # The is_active parameter from the config should not affect authentication
         self._is_active = True
-        self._last_sync = kwargs.get('last_sync', None)
-        self._sync_status = kwargs.get('sync_status', "not synchronized")
+        self._last_sync = datetime.now(timezone.utc).isoformat()
+        self._sync_status = "not synchronized"
         self.ledger_file = None
     
     def synchronize(self, start_date=None):
@@ -45,10 +45,6 @@ class MockWallet(Wallet):
     def authenticate(self):
         """Mock implementation."""
         return self._is_active
-    
-    def get_sync_status(self):
-        """Mock implementation."""
-        return self._sync_status, self._last_sync or datetime.now(timezone.utc).isoformat()
     
     def _get_ohlc_data(self, assets_in_portfolio, start_date=None):
         """Mock implementation."""
@@ -253,9 +249,12 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         self.assertIsNone(wallet_id)
         self.assertEqual(len(self.portfolio.wallets_data), 0)
     
-    @patch.object(MockWallet, 'authenticate', return_value=False)
+    @patch.object(MockWallet, 'authenticate')
     def test_add_wallet_authentication_failure(self, mock_authenticate):
         """Test adding wallet with authentication failure."""
+        # Set up the mock to return False for authentication
+        mock_authenticate.return_value = False
+        
         wallet_id = self.portfolio.add_wallet(
             wallet_type="Kraken",
             name="Test Wallet",
@@ -395,8 +394,16 @@ class TestPortfolioSynchronization(unittest.TestCase):
         results = self.portfolio.synchronize_all_wallets()
         self.assertEqual(results, {})
     
-    def test_synchronize_all_wallets_success(self):
+    @patch.object(MockWallet, 'authenticate')
+    @patch.object(MockWallet, 'synchronize')
+    @patch.object(MockWallet, 'get_sync_status')
+    def test_synchronize_all_wallets_success(self, mock_get_sync_status, mock_synchronize, mock_authenticate):
         """Test successful synchronization of all wallets."""
+        # Set up the mocks
+        mock_authenticate.return_value = True
+        mock_synchronize.return_value = (True, None)
+        mock_get_sync_status.return_value = ("completed", datetime.now(timezone.utc))
+        
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
             wallet_type="Kraken",
@@ -416,8 +423,14 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertIsNone(result['error'])
     
-    def test_synchronize_all_wallets_authentication_failure(self):
+    @patch.object(MockWallet, 'authenticate')
+    @patch.object(MockWallet, 'get_sync_status')
+    def test_synchronize_all_wallets_authentication_failure(self, mock_get_sync_status, mock_authenticate):
         """Test synchronization with authentication failure."""
+        # Set up the mocks
+        mock_authenticate.return_value = False
+        mock_get_sync_status.return_value = ("not synchronized", datetime.now(timezone.utc))
+        
         # Create a wallet with authentication failure
         wallet_id = self.portfolio._generate_wallet_id("Kraken", "Test Wallet")
         wallet_config = {
@@ -427,7 +440,7 @@ class TestPortfolioSynchronization(unittest.TestCase):
             'description': '',
             'api_key': 'test_key',
             'api_secret': 'test_secret',
-            'is_active': False,
+            'is_active': True,  # Set to True initially, but authenticate() will return False
             'created_datetime': datetime.now(timezone.utc).isoformat(),
             'updated_datetime': None,
             'reference_fiat': 'EUR',
@@ -436,8 +449,7 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.portfolio.wallets_data.append(wallet_config)
         
         # Mock authentication failure
-        with patch.object(MockWallet, 'authenticate', return_value=False):
-            results = self.portfolio.synchronize_all_wallets()
+        results = self.portfolio.synchronize_all_wallets()
         
         # Verify results
         self.assertIn(wallet_id, results)
@@ -475,8 +487,16 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], "Failed to load wallet instance")
     
-    def test_synchronize_all_wallets_with_date_range(self):
+    @patch.object(MockWallet, 'authenticate')
+    @patch.object(MockWallet, 'synchronize')
+    @patch.object(MockWallet, 'get_sync_status')
+    def test_synchronize_all_wallets_with_date_range(self, mock_get_sync_status, mock_synchronize, mock_authenticate):
         """Test synchronization with date range parameters."""
+        # Set up the mocks
+        mock_authenticate.return_value = True
+        mock_synchronize.return_value = (True, None)
+        mock_get_sync_status.return_value = ("completed", datetime.now(timezone.utc))
+        
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
             wallet_type="Kraken",
@@ -495,6 +515,9 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.assertIn(wallet_id, results)
         result = results[wallet_id]
         self.assertTrue(result['success'])
+        
+        # Verify that synchronize was called with the start_date
+        mock_synchronize.assert_called_once_with(start_date)
 
 
 @pytest.mark.unit
