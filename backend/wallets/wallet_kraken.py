@@ -779,7 +779,7 @@ class KrakenWallet(Wallet):
         logger.info(f"Combined data: {combined_df.shape[0]} records")
         return combined_df   
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,

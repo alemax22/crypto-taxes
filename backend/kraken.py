@@ -1,3 +1,5 @@
+# DEPRECATED: This script is no longer used
+
 import time
 import requests
 from cryptography.fernet import Fernet

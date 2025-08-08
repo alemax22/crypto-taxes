@@ -425,9 +425,9 @@ class Portfolio:
         wallet_id = f"{base_id}-{uuid_str}"
         
         return wallet_id
-    
-if __name__ == "__main__":
-     # Configure logging
+
+if __name__ == "__main__":  # pragma: no cover
+    # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'

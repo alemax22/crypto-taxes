@@ -1,3 +1,5 @@
+# DEPRECATED: This script is no longer used
+
 #!/usr/bin/env python3
 """
 Italian Crypto Tax Calculator for 2025
