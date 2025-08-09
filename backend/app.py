@@ -130,6 +130,8 @@ async def add_wallet(wallet_request: WalletCreateRequest):
                 detail="Portfolio not initialized"
             )
         
+        logger.info(f"Wallet request: {wallet_request}")
+
         wallet_id = portfolio.add_wallet(
             wallet_type=wallet_request.wallet_type,
             name=wallet_request.name,
@@ -138,6 +140,8 @@ async def add_wallet(wallet_request: WalletCreateRequest):
             api_secret=wallet_request.api_secret,
             description=wallet_request.description
         )
+
+        logger.info(f"Wallet ID: {wallet_id}")
         
         if wallet_id:
             return ApiResponse(
@@ -161,7 +165,10 @@ async def add_wallet(wallet_request: WalletCreateRequest):
 
 @app.get("/wallets/{wallet_id}", response_model=ApiResponse)
 async def get_wallet(wallet_id: str):
-    """Get a specific wallet by ID."""
+    """
+    Get a specific wallet by ID.
+    It MUST not return sensitive data like api_key and api_secret.
+    """
     try:
         if not portfolio:
             raise HTTPException(
@@ -170,6 +177,11 @@ async def get_wallet(wallet_id: str):
             )
         
         wallet = portfolio.get_wallet_by_id(wallet_id)
+
+        # Remove api_key and api_secret from the wallet
+        wallet.pop("api_key", None)
+        wallet.pop("api_secret", None)
+
         if wallet:
             return ApiResponse(
                 success=True,

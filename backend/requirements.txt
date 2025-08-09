@@ -8,3 +8,6 @@ numpy
 flask
 flask-cors
 fastparquet
+fastapi
+uvicorn[standard]
+pydantic

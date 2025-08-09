@@ -48,7 +48,7 @@ A comprehensive crypto tax calculation tool for Italian residents, specifically 
 
 1. **Install Python dependencies**:
    ```bash
-   pip install -r requirements.txt
+   pip install -r backend/requirements.txt
    ```
 
 2. **Set up encryption**:

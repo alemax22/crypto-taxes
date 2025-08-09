@@ -535,8 +535,10 @@ class KrakenWallet(Wallet):
     
     def _get_ledger(self, start_timestamp: int, ofs: int = 0, without_count: str = "false") -> Dict[str, Any]:
         """Get ledger data from Kraken."""
+        nonce = str(int(1_000_000*time.time()))
+        logger.info(f"Nonce: {nonce}")
         resp_ledger = self._kraken_request('/0/private/Ledgers', {
-            "nonce": str(int(1_000_000*time.time())),
+            "nonce": nonce,
             "start": start_timestamp,
             "ofs": ofs,
             "without_count": without_count
