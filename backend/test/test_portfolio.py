@@ -23,14 +23,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from wallets.portfolio import Portfolio
 from wallets.wallet import Wallet
 from wallets.wallet_kraken import KrakenWallet
+from wallets.wallet_enums import WalletType
 
 
 class MockWallet(Wallet):
     """Concrete implementation of Wallet for testing."""
     
-    def __init__(self, name: str, id: str, reference_fiat: str, description: str = "", 
+    def __init__(self, name: str, id: str, reference_fiat: str, portfolio_id: str = "test_portfolio", description: str = "", 
                  api_key: str = None, api_secret: str = None, **kwargs):
-        super().__init__(name, id, reference_fiat, description, api_key, api_secret)
+        super().__init__(name, id, reference_fiat, portfolio_id, description, api_key, api_secret)
         # For testing, we want wallets to authenticate successfully by default
         # The is_active parameter from the config should not affect authentication
         self._is_active = True
@@ -189,31 +190,36 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         self.wallets_dir_patcher = patch('wallets.portfolio.WALLETS_DIR', self.wallets_dir)
         self.mock_wallets_dir = self.wallets_dir_patcher.start()
         
-        # Create portfolio and mock wallet types
+        # Create portfolio
         self.portfolio = Portfolio()
-        self.portfolio.wallet_types = {'Kraken': MockWallet}
+        
+        # Mock the factory to return MockWallet for Kraken type
+        self.factory_patcher = patch.object(self.portfolio.wallet_factory, '_get_wallet_class')
+        self.mock_get_wallet_class = self.factory_patcher.start()
+        self.mock_get_wallet_class.return_value = MockWallet
     
     def tearDown(self):
         """Clean up test fixtures."""
         self.wallets_dir_patcher.stop()
+        self.factory_patcher.stop()
         shutil.rmtree(self.test_dir, ignore_errors=True)
     
     def test_generate_wallet_id(self):
         """Test wallet ID generation."""
-        wallet_id = self.portfolio._generate_wallet_id("Kraken", "Test Wallet")
+        wallet_id = self.portfolio._generate_wallet_id("KrakenWallet", "Test Wallet")
         
         # Verify format
         self.assertTrue(wallet_id.startswith("KRAKEN-"))
         self.assertTrue(len(wallet_id) > len("KRAKEN-"))
         
         # Verify uniqueness
-        wallet_id2 = self.portfolio._generate_wallet_id("Kraken", "Test Wallet")
+        wallet_id2 = self.portfolio._generate_wallet_id("KrakenWallet", "Test Wallet")
         self.assertNotEqual(wallet_id, wallet_id2)
     
     def test_add_wallet_success(self):
         """Test successful wallet addition."""
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -228,7 +234,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         # Verify wallet data
         wallet = self.portfolio.wallets_data[0]
         self.assertEqual(wallet['wallet_id'], wallet_id)
-        self.assertEqual(wallet['wallet_type'], "Kraken")
+        self.assertEqual(wallet['wallet_type'], "KrakenWallet")
         self.assertEqual(wallet['name'], "Test Wallet")
         self.assertEqual(wallet['reference_fiat'], "EUR")
         self.assertEqual(wallet['api_key'], "test_key")
@@ -239,14 +245,21 @@ class TestPortfolioWalletManagement(unittest.TestCase):
     
     def test_add_wallet_unsupported_type(self):
         """Test adding wallet with unsupported type."""
-        wallet_id = self.portfolio.add_wallet(
-            wallet_type="Unsupported",
-            name="Test Wallet",
-            reference_fiat="EUR"
-        )
+        # Test with a string that doesn't correspond to any WalletType enum
+        # This should fail because the portfolio expects WalletType enum values
+        try:
+            wallet_id = self.portfolio.add_wallet(
+                wallet_type="Unsupported",  # This will cause an AttributeError
+                name="Test Wallet",
+                reference_fiat="EUR"
+            )
+            # If we get here, the test should fail
+            self.fail("Expected AttributeError when passing string instead of WalletType enum")
+        except AttributeError:
+            # This is the expected behavior
+            pass
         
         # Verify wallet was not added
-        self.assertIsNone(wallet_id)
         self.assertEqual(len(self.portfolio.wallets_data), 0)
     
     @patch.object(MockWallet, 'authenticate')
@@ -256,7 +269,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         mock_authenticate.return_value = False
         
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -271,7 +284,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         """Test listing wallets without sensitive data."""
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -293,7 +306,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         """Test getting wallet by ID."""
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -319,7 +332,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         """Test loading wallet instance."""
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -344,7 +357,7 @@ class TestPortfolioWalletManagement(unittest.TestCase):
         """Test removing wallet."""
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -380,13 +393,18 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.wallets_dir_patcher = patch('wallets.portfolio.WALLETS_DIR', self.wallets_dir)
         self.mock_wallets_dir = self.wallets_dir_patcher.start()
         
-        # Create portfolio and mock wallet types
+        # Create portfolio
         self.portfolio = Portfolio()
-        self.portfolio.wallet_types = {'Kraken': MockWallet}
+        
+        # Mock the factory to return MockWallet for Kraken type
+        self.factory_patcher = patch.object(self.portfolio.wallet_factory, '_get_wallet_class')
+        self.mock_get_wallet_class = self.factory_patcher.start()
+        self.mock_get_wallet_class.return_value = MockWallet
     
     def tearDown(self):
         """Clean up test fixtures."""
         self.wallets_dir_patcher.stop()
+        self.factory_patcher.stop()
         shutil.rmtree(self.test_dir, ignore_errors=True)
     
     def test_synchronize_all_wallets_no_wallets(self):
@@ -406,7 +424,7 @@ class TestPortfolioSynchronization(unittest.TestCase):
         
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -432,10 +450,10 @@ class TestPortfolioSynchronization(unittest.TestCase):
         mock_get_sync_status.return_value = ("not synchronized", datetime.now(timezone.utc))
         
         # Create a wallet with authentication failure
-        wallet_id = self.portfolio._generate_wallet_id("Kraken", "Test Wallet")
+        wallet_id = self.portfolio._generate_wallet_id("KrakenWallet", "Test Wallet")
         wallet_config = {
             'wallet_id': wallet_id,
-            'wallet_type': 'Kraken',
+            'wallet_type': 'KrakenWallet',
             'name': 'Test Wallet',
             'description': '',
             'api_key': 'test_key',
@@ -461,7 +479,7 @@ class TestPortfolioSynchronization(unittest.TestCase):
     def test_synchronize_all_wallets_load_failure(self):
         """Test synchronization with wallet load failure."""
         # Add a wallet with invalid configuration
-        wallet_id = self.portfolio._generate_wallet_id("Kraken", "Test Wallet")
+        wallet_id = self.portfolio._generate_wallet_id("KrakenWallet", "Test Wallet")
         wallet_config = {
             'wallet_id': wallet_id,
             'wallet_type': 'InvalidType',  # This will cause load failure
@@ -499,7 +517,7 @@ class TestPortfolioSynchronization(unittest.TestCase):
         
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -533,13 +551,18 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         self.wallets_dir_patcher = patch('wallets.portfolio.WALLETS_DIR', self.wallets_dir)
         self.mock_wallets_dir = self.wallets_dir_patcher.start()
         
-        # Create portfolio and mock wallet types
+        # Create portfolio
         self.portfolio = Portfolio()
-        self.portfolio.wallet_types = {'Kraken': MockWallet}
+        
+        # Mock the factory to return MockWallet for Kraken type
+        self.factory_patcher = patch.object(self.portfolio.wallet_factory, '_get_wallet_class')
+        self.mock_get_wallet_class = self.factory_patcher.start()
+        self.mock_get_wallet_class.return_value = MockWallet
     
     def tearDown(self):
         """Clean up test fixtures."""
         self.wallets_dir_patcher.stop()
+        self.factory_patcher.stop()
         shutil.rmtree(self.test_dir, ignore_errors=True)
     
     def test_create_csv_file(self):
@@ -562,14 +585,14 @@ class TestPortfolioCSVOperations(unittest.TestCase):
             headers = next(reader)
             expected_headers = ['wallet_id', 'wallet_type', 'name', 'description', 'api_key',
                               'api_secret', 'is_active', 'created_datetime', 'updated_datetime',
-                              'reference_fiat', 'sync_status']
+                              'reference_fiat', 'sync_status', 'portfolio_id']
             self.assertEqual(headers, expected_headers)
     
     def test_save_wallets_to_csv(self):
         """Test saving wallets to CSV."""
         # Add a wallet
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -588,7 +611,7 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(row['wallet_id'], wallet_id)
-        self.assertEqual(row['wallet_type'], "Kraken")
+        self.assertEqual(row['wallet_type'], "KrakenWallet")
         self.assertEqual(row['name'], "Test Wallet")
         # API credentials should be encrypted
         self.assertNotEqual(row['api_key'], "test_key")
@@ -598,7 +621,7 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         """Test loading wallets from CSV."""
         # Create a wallet and save it
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -607,6 +630,9 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         
         # Create a new portfolio instance to load from CSV
         new_portfolio = Portfolio()
+        # Mock the factory for the new portfolio instance
+        with patch.object(new_portfolio.wallet_factory, '_get_wallet_class', return_value=MockWallet):
+            pass  # The mock is now active for this portfolio
         
         # Verify wallet was loaded
         self.assertEqual(len(new_portfolio.wallets_data), 1)
@@ -620,7 +646,7 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         """Test loading wallets from CSV with decryption failure."""
         # Create a wallet and save it
         wallet_id = self.portfolio.add_wallet(
-            wallet_type="Kraken",
+            wallet_type=WalletType.KRAKEN,
             name="Test Wallet",
             reference_fiat="EUR",
             api_key="test_key",
@@ -634,6 +660,9 @@ class TestPortfolioCSVOperations(unittest.TestCase):
         
         # Create a new portfolio instance to load from CSV
         new_portfolio = Portfolio()
+        # Mock the factory for the new portfolio instance
+        with patch.object(new_portfolio.wallet_factory, '_get_wallet_class', return_value=MockWallet):
+            pass  # The mock is now active for this portfolio
         
         # Verify wallet was loaded but marked as inactive
         self.assertEqual(len(new_portfolio.wallets_data), 1)

@@ -23,6 +23,7 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from wallets.wallet import Wallet
+from wallets.wallet_enums import WalletSyncStatus
 from config import RESAMPLING_INTERVAL_IN_SECONDS, WALLETS_DIR
 
 logger = logging.getLogger(__name__)
@@ -44,20 +45,29 @@ class KrakenWallet(Wallet):
                  name: str,
                  id: str,
                  reference_fiat: str,
+                 portfolio_id: str,
                  description: str = "",
                  api_key: Optional[str] = None,
                  api_secret: Optional[str] = None,
                  is_active: bool = False, 
                  last_sync: Optional[datetime] = None, 
-                 sync_status: str = "not synchronized"):
+                 sync_status: WalletSyncStatus = WalletSyncStatus.NOT_SYNCHRONIZED):
         """
         Initialize Kraken wallet.
         
         Args:
-            api_key: Kraken API key
-            api_secret: Kraken API secret
+            name: Name of the wallet
+            id: ID of the wallet
+            reference_fiat: Reference fiat currency
+            portfolio_id: ID of the portfolio this wallet belongs to
+            description: Description of the wallet (optional)
+            api_key: Kraken API key (optional)
+            api_secret: Kraken API secret (optional)
+            is_active: Whether the wallet is active (optional)
+            last_sync: Last synchronization timestamp (optional)
+            sync_status: Status of the synchronization process (optional)
         """
-        super().__init__(name, id, reference_fiat, description, api_key, api_secret, is_active, last_sync, sync_status)
+        super().__init__(name, id, reference_fiat, portfolio_id, description, api_key, api_secret, is_active, last_sync, sync_status)
         
         # Kraken-specific settings
         self.base_url = 'https://api.kraken.com'

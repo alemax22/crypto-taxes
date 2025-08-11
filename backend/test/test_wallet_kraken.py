@@ -39,7 +39,7 @@ class TestKrakenWallet(unittest.TestCase):
         self.test_api_secret = "test_api_secret_67890"
         
         # Create test wallet instance
-        self.wallet = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", self.test_api_key, self.test_api_secret)
+        self.wallet = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", self.test_api_key, self.test_api_secret)
         
         # Override ledger file path for testing (keep filename, change base folder)
         self.wallet.ledger_file = os.path.join(self.persistent_data_dir, "data", "kraken_ledger.parquet")

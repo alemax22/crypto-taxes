@@ -13,12 +13,14 @@ import logging
 import os
 import sys
 import numpy as np
+from enum import Enum
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 from config import TRANSACTION_REQUIRED_COLUMNS
+from wallets.wallet_enums import WalletSyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +37,13 @@ class Wallet(ABC):
                 name: str,
                 id: str,
                 reference_fiat: str,
+                portfolio_id: str,
                 description: str = "", 
                 api_key: Optional[str] = None,
                 api_secret: Optional[str] = None,
                 is_active: bool = False,
                 last_sync: Optional[datetime] = None,
-                sync_status: str = "not synchronized"):
+                sync_status: WalletSyncStatus = WalletSyncStatus.NOT_SYNCHRONIZED):
         """
         Initialize the wallet.
         
@@ -48,21 +51,19 @@ class Wallet(ABC):
             name: Name of the wallet/exchange
             id: ID of the wallet/exchange
             reference_fiat: Reference fiat of the wallet/exchange
+            portfolio_id: ID of the portfolio this wallet belongs to
             description: Description of the wallet/exchange (optional)
             api_key: API key for authentication (optional)
             api_secret: API secret for authentication (optional)
             is_active: Whether the wallet is active (optional)
             last_sync: Last synchronization timestamp (optional)
-            sync_status: Status of the synchronization process (optional):
-                - not synchronized: the wallet has not been synchronized yet
-                - in progress: the synchronization is in progress
-                - completed: the synchronization has been completed
-                - failed: the synchronization has failed
+            sync_status: Status of the synchronization process (optional)
         """
         self.name = name
         self.description = description
         self.id = id
         self.reference_fiat = reference_fiat
+        self.portfolio_id = portfolio_id
         self.api_key = api_key
         self.api_secret = api_secret
         self.is_active = is_active
@@ -90,9 +91,9 @@ class Wallet(ABC):
         
         Example:
 
-        self.sync_status = "in progress"
+        self.sync_status = WalletSyncStatus.IN_PROGRESS
         time.sleep(1)
-        self.sync_status = "completed"
+        self.sync_status = WalletSyncStatus.COMPLETED
         self.last_sync = datetime.now(timezone.utc)
 
         The output dataframe should have the following columns:
@@ -213,7 +214,7 @@ class Wallet(ABC):
         """
         return pd.DataFrame()
 
-    def get_sync_status(self) -> tuple[str, Optional[datetime]]:
+    def get_sync_status(self) -> tuple[WalletSyncStatus, Optional[datetime]]:
         """
         Get the current synchronization status.
         
