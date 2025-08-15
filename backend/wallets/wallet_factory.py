@@ -165,6 +165,7 @@ class WalletFactory:
             
             # Convert string to WalletType enum
             try:
+                # From string value of Enum we get the enum
                 wallet_type = WalletType(wallet_type_str)
             except ValueError:
                 logger.error(f"Invalid wallet type: {wallet_type_str}")
@@ -196,7 +197,7 @@ class WalletFactory:
                     logger.warning(f"Invalid last_sync format: {last_sync_str}")
             
             # Handle sync_status
-            sync_status_str = wallet_data.get('sync_status', WalletSyncStatus.NOT_SYNCHRONIZED.value)
+            sync_status_str = wallet_data.get('sync_status','')
             try:
                 sync_status = WalletSyncStatus(sync_status_str)
             except ValueError:
