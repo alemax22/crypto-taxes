@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 from config import TRANSACTION_REQUIRED_COLUMNS
-from wallets.wallet_enums import WalletSyncStatus
+from wallets.wallet_enums import WalletSyncStatus, WalletType
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +276,11 @@ class Wallet(ABC):
             
         except Exception as e:
             logger.error(f"Error saving local ledger data: {e}")
+
+
+    def get_wallet_type(self) -> WalletType:
+        """Get the type of the wallet."""
+        return WalletType[self.__class__.__name__.replace("Wallet", "").upper()]
 
     def __str__(self) -> str:
         """String representation of the wallet."""

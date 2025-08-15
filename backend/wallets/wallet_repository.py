@@ -17,6 +17,7 @@ import uuid
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from wallets.wallet_enums import WalletSyncStatus
 from config import WALLETS_DIR
 from wallets.wallet import Wallet
 from wallets.wallet_factory import WalletFactory
@@ -273,13 +274,13 @@ class CsvWalletRepository(WalletRepository):
             # Convert all wallets to CSV rows with proper mapping
             csv_rows = []
             for wallet in wallet_list:
-                # Determine wallet type from the wallet class name
-                wallet_type = wallet.__class__.__name__
+                # Determine wallet type from the wallet instance
+                wallet_type_value = wallet.get_wallet_type().value
                 
                 # Prepare wallet data for CSV
                 wallet_data = {
                     'wallet_id': wallet.id,
-                    'wallet_type': wallet_type,
+                    'wallet_type': wallet_type_value,
                     'name': wallet.name,
                     'description': wallet.description or '',
                     'api_key': '',  # Will be encrypted just before writing
@@ -288,7 +289,8 @@ class CsvWalletRepository(WalletRepository):
                     'created_datetime': '',  # Not available in Wallet class
                     'updated_datetime': '',  # Not available in Wallet class
                     'reference_fiat': wallet.reference_fiat,
-                    'sync_status': wallet.sync_status.value if wallet.sync_status else 'not_synchronized',
+                    # Persist the string value in CSV
+                    'sync_status': (wallet.sync_status.value if wallet.sync_status else WalletSyncStatus.NOT_SYNCHRONIZED.value),
                     'portfolio_id': wallet.portfolio_id,
                 }
                 

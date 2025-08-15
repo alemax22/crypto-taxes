@@ -20,6 +20,7 @@ from decimal import Decimal
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from wallets.wallet_enums import WalletType, WalletSyncStatus
 from wallets.wallet_kraken import KrakenWallet, EXCEPTION_ASSETS
 from config import RESAMPLING_INTERVAL_IN_SECONDS
 
@@ -174,7 +175,7 @@ class TestKrakenWallet(unittest.TestCase):
         # Verify results
         self.assertTrue(result)
         self.assertIsNotNone(self.wallet.last_sync)
-        self.assertEqual(self.wallet.sync_status, "completed")
+        self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
 
     @patch.object(time, 'sleep')
     @patch.object(KrakenWallet, '_get_tradable_assets_info')
@@ -263,7 +264,7 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertTrue(success)
         self.assertIsNone(error)
         self.assertIsNotNone(self.wallet.last_sync)
-        self.assertEqual(self.wallet.sync_status, "completed")
+        self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
         
         # Verify that _get_ledger was called exactly 4 times (for 178 transactions in batches of 50)
         self.assertEqual(mock_get_ledger.call_count, 4)
@@ -457,6 +458,10 @@ class TestKrakenWallet(unittest.TestCase):
         expected_types = ["trade", "deposit", "withdrawal", "staking"]
         for tx_type in expected_types:
             self.assertIn(tx_type, df["transaction_original_type"].values, f"Transaction type {tx_type} should be present in the data")
+
+    def test_get_wallet_type(self):
+        """Test that the wallet type is correctly returned."""
+        self.assertEqual(self.wallet.get_wallet_type(), WalletType.KRAKEN)
 
 if __name__ == '__main__':
     # Run tests

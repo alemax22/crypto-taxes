@@ -150,12 +150,12 @@ class KrakenWallet(Wallet):
 
         """
         try:
-            self.sync_status = "in progress"
+            self.sync_status = WalletSyncStatus.IN_PROGRESS
             
             # Check authentication
             if not self.is_active:
                 if not self.authenticate():
-                    self.sync_status = "failed"
+                    self.sync_status = WalletSyncStatus.FAILED
                     return False, "Authentication failed"
             
             self._ensure_data_directories()
@@ -174,12 +174,12 @@ class KrakenWallet(Wallet):
             
             # Update last sync timestamp
             self.last_sync = datetime.now(timezone.utc)
-            self.sync_status = "completed"
+            self.sync_status = WalletSyncStatus.COMPLETED
             return True, None
             
         except Exception as e:
             logger.error(f"Kraken synchronization error: {str(e)}")
-            self.sync_status = "failed"
+            self.sync_status = WalletSyncStatus.FAILED
             return False, str(e)
     
     def _ensure_data_directories(self) -> None:

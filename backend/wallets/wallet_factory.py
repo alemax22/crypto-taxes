@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 import sys
 import os
+import hashlib
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,27 +54,30 @@ class WalletFactory:
         except (NameError, AttributeError) as e:
             logger.error(f"Wallet class not found for type {wallet_type.value}: {e}")
             return None
-    
-    def _generate_wallet_id(self, wallet_type: WalletType) -> str:
+     
+    def _generate_wallet_id(self, wallet_type: WalletType, portfolio_id: str, api_key: Optional[str]) -> str:
         """
-        Generate a unique wallet ID.
+        Generate a deterministic wallet ID.
+        
+        Format: "WalletType.value-<ALPHANUMERIC_CODE>"
+        The code is derived from a hash of (portfolio_id, api_key, wallet_type).
+        This is stable for the same inputs and accepts variable-length values.
         
         Args:
             wallet_type: The wallet type enum
+            portfolio_id: The portfolio identifier
+            api_key: API key associated with the wallet (can be None)
             
         Returns:
-            Unique wallet ID
+            Deterministic wallet ID
         """
-        import uuid
-        # Create base ID from type and name (remove "Wallet" suffix)
-        base_name = wallet_type.value.replace("Wallet", "")
-        base_id = f"{base_name.upper()}"
         
-        # Generate a random UUID
-        uuid_str = str(uuid.uuid4())
-        wallet_id = f"{base_id}-{uuid_str}"
-        
-        return wallet_id
+        api_key_str = api_key or ""
+        hash_input = f"{portfolio_id}::{api_key_str}::{wallet_type.value}".encode("utf-8")
+        digest_hex = hashlib.sha256(hash_input).hexdigest()
+        # Use a reasonably short, alphanumeric code (hex) while keeping collision risk low
+        code = digest_hex[:36] # same length as uuid4
+        return f"{wallet_type.value}-{code}"
     
     def create_wallet(self, 
                      wallet_type: WalletType,
@@ -116,7 +120,7 @@ class WalletFactory:
             
             # Generate ID if not provided
             if id is None:
-                id = self._generate_wallet_id(wallet_type)
+                id = self._generate_wallet_id(wallet_type, portfolio_id, api_key)
                 logger.info(f"Generated wallet ID: {id}")
             
             wallet_instance = wallet_class(
@@ -216,4 +220,4 @@ class WalletFactory:
             
         except Exception as e:
             logger.error(f"Failed to create wallet from data: {str(e)}")
-            return None
+            return None 
