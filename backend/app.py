@@ -16,6 +16,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wallets.portfolio import Portfolio
+from wallets.wallet_enums import WalletType
+from db import init_db, engine
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +50,7 @@ class WalletCreateRequest(BaseModel):
     api_key: Optional[str] = Field(None, description="API key for the wallet")
     api_secret: Optional[str] = Field(None, description="API secret for the wallet")
     description: Optional[str] = Field("", description="Optional description of the wallet")
+    skip_auth: Optional[bool] = Field(False, description="Skip external authentication (testing only)")
 
 class WalletResponse(BaseModel):
     wallet_id: str
@@ -73,6 +76,8 @@ async def startup_event():
     """Initialize the portfolio on startup."""
     global portfolio
     try:
+        # Ensure database tables exist (safe if DB not used yet)
+        init_db()
         portfolio = Portfolio()
         logger.info("Portfolio initialized successfully")
     except Exception as e:
@@ -120,6 +125,18 @@ async def list_wallets():
             detail=f"Failed to list wallets: {str(e)}"
         )
 
+@app.get("/api/health", response_model=ApiResponse)
+async def api_health():
+    """Health endpoint that also validates DB connectivity."""
+    try:
+        # Quick DB check
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+        return ApiResponse(success=True, message="ok", data={"db": "ok"})
+    except Exception as e:
+        logger.error(f"Healthcheck DB error: {e}")
+        return ApiResponse(success=False, message="db error", data={"error": str(e)})
+
 @app.post("/wallets", response_model=ApiResponse)
 async def add_wallet(wallet_request: WalletCreateRequest):
     """Add a new wallet to the portfolio."""
@@ -132,13 +149,28 @@ async def add_wallet(wallet_request: WalletCreateRequest):
         
         logger.info(f"Wallet request: {wallet_request}")
 
+        # Normalize wallet_type (accepts 'Kraken', 'KRAKEN', or enum value)
+        wt_str = wallet_request.wallet_type
+        wallet_type_enum = None
+        try:
+            wallet_type_enum = WalletType[wt_str.upper()]
+        except Exception:
+            for enum_item in WalletType:
+                if enum_item.value.replace('Wallet', '').lower() == wt_str.lower():
+                    wallet_type_enum = enum_item
+                    break
+        if wallet_type_enum is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported wallet_type: {wt_str}")
+
         wallet_id = portfolio.add_wallet(
-            wallet_type=wallet_request.wallet_type,
+            wallet_type=wallet_type_enum,
             name=wallet_request.name,
             reference_fiat=wallet_request.reference_fiat,
             api_key=wallet_request.api_key,
             api_secret=wallet_request.api_secret,
-            description=wallet_request.description
+            description=wallet_request.description,
+            portfolio_id="default_portfolio",
+            skip_auth=bool(wallet_request.skip_auth)
         )
 
         logger.info(f"Wallet ID: {wallet_id}")

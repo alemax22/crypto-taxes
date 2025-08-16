@@ -150,6 +150,11 @@ class WalletFactory:
         This method is typically used by the WalletRepository to reconstruct
         wallet instances from persisted data.
         
+        Having this method and not including this logic in the WalletRepository
+        allows to keep the WalletRepository agnostic of the Wallet implementation.
+        
+        It expects all the datetime in ISO 8601 format, with UTC timezone.
+
         Args:
             wallet_data: Dictionary containing wallet configuration data
             

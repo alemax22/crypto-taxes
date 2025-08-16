@@ -280,7 +280,7 @@ class Wallet(ABC):
 
     def get_wallet_type(self) -> WalletType:
         """Get the type of the wallet."""
-        return WalletType[self.__class__.__name__.replace("Wallet", "").upper()]
+        return WalletType(self.__class__.__name__)
 
     def __str__(self) -> str:
         """String representation of the wallet."""

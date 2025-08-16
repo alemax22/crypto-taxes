@@ -194,8 +194,5 @@ class TestWalletFactoryIdGeneration(unittest.TestCase):
         deterministic_id = self.factory._generate_wallet_id(wallet_type, portfolio_id, api_key)
         self.assertNotEqual(wallet.id, deterministic_id)
 
-
 if __name__ == '__main__':
     unittest.main(verbosity=2)
-
-

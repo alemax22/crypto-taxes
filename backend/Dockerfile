@@ -1,13 +1,9 @@
-# Backend Flask application Dockerfile
 FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-ENV FLASK_RUN_HOST=0.0.0.0
-ENV FLASK_RUN_PORT=5000
+ENV PYTHONPATH=/app
 
 # Set working directory
 WORKDIR /app
@@ -46,5 +42,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Run the Flask application
-CMD ["python", "app.py"] 
+# Run the FastAPI application via uvicorn
+CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000"]

@@ -11,3 +11,5 @@ fastparquet
 fastapi
 uvicorn[standard]
 pydantic
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
