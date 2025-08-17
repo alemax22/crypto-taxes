@@ -9,11 +9,11 @@ import sys
 import shutil
 import tempfile
 import unittest
-from datetime import datetime
 
-import importlib
+import hashlib
+import base64
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 import pytest
 
 # Ensure backend modules can be imported (same pattern as other tests)
@@ -34,40 +34,32 @@ class TestWalletRepository(unittest.TestCase):
 		engine = create_engine("sqlite:///:memory:")
 		SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
-		# Patch db module to use SQLite and no schema
+		# Patch db module to use SQLite, fresh Base, and no schema
 		import db as app_db
 		self._original_engine = app_db.engine
 		self._original_session_local = app_db.SessionLocal
+		self._original_base = app_db.Base
 		self._original_schema = getattr(app_db, 'SCHEMA_NAME', None)
 		app_db.engine = engine
 		app_db.SessionLocal = SessionLocal
+		app_db.Base = declarative_base()
 		app_db.SCHEMA_NAME = None
 
-		# Reload repository to bind ORM with patched db
+		# Import repository after patching db so ORM binds to the test Base/engine
 		import wallets.wallet_repository as wr
-		importlib.reload(wr)
 		self.wr = wr
-
-		# Create tables
-		self.wr.Base.metadata.create_all(bind=engine)
-
-		# Patch repository __init__ to avoid schema DDL on SQLite
-		self._orig_repo_init = self.wr.PostgresWalletRepository.__init__
-		
-		def repo_init_no_schema(repo_self):
-			# Call base init to set encryption key, etc.
-			self.wr.WalletRepository.__init__(repo_self)
-			# Ensure tables are present (already created above)
-			return None
-
-		self.wr.PostgresWalletRepository.__init__ = repo_init_no_schema
 
 		# Instantiate repository
 		self.repo = self.wr.PostgresWalletRepository()
 
+		# Ensure tables exist for this in-memory engine
+		self.wr.Base.metadata.create_all(bind=engine)
+
 		# Helpers
-		self.WalletType = self.wr.wallets.wallet_enums.WalletType
-		self.factory = self.wr.wallets.wallet_factory.WalletFactory()
+		from wallets.wallet_enums import WalletType
+		from wallets.wallet_factory import WalletFactory
+		self.WalletType = WalletType
+		self.factory = WalletFactory()
 
 	def tearDown(self):
 		# Restore patched attributes
@@ -78,12 +70,21 @@ class TestWalletRepository(unittest.TestCase):
 		app_db.engine = self._original_engine
 		app_db.SessionLocal = self._original_session_local
 		app_db.SCHEMA_NAME = self._original_schema
-		# Restore methods
-		self.wr.PostgresWalletRepository.__init__ = self._orig_repo_init
 		# Cleanup temp dir
 		shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-	def _make_wallet(self, name="W1", portfolio_id="pf1", api_key="k", api_secret="s"):
+	def _make_wallet(self, name="W1", portfolio_id="pf1", api_key=None, api_secret=None):
+		# Generate realistic, deterministic credentials by default to avoid ID collisions
+		if api_key is None:
+			seed = f"{portfolio_id}:{name}:api_key".encode("utf-8")
+			digest = hashlib.sha256(seed).hexdigest().upper()
+			# Kraken-like API key: 32 uppercase alphanumeric chars
+			api_key = digest[:32]
+		if api_secret is None:
+			seed = f"{portfolio_id}:{name}:api_secret".encode("utf-8")
+			# 64 bytes derived from SHA-512, then base64 to ~88 chars
+			secret_bytes = hashlib.sha512(seed).digest()
+			api_secret = base64.b64encode(secret_bytes).decode("ascii")
 		return self.factory.create_wallet(
 			wallet_type=self.WalletType.KRAKEN,
 			name=name,
@@ -95,6 +96,64 @@ class TestWalletRepository(unittest.TestCase):
 			is_active=True,
 			last_sync=None,
 		)
+
+	def test_enum_and_datetime_roundtrip(self):
+		from wallets.wallet_enums import WalletSyncStatus
+		from datetime import datetime, timedelta
+
+		# Create wallet with a non-default enum value
+		w = self._make_wallet(name="E1", portfolio_id="pfE1")
+		w.sync_status = WalletSyncStatus.IN_PROGRESS
+		assert self.repo.save_wallet(w)
+
+		# Verify enum round-trip through repository
+		got = self.repo.get_wallet_by_id(w.id)
+		self.assertIsNotNone(got)
+		self.assertEqual(got.sync_status, WalletSyncStatus.IN_PROGRESS)
+
+		# Verify datetime fields are persisted in DB (created_datetime set, updated_datetime may be None)
+		with self.wr.SessionLocal() as session:
+			orm = session.query(self.wr.WalletORM).filter(self.wr.WalletORM.wallet_id == w.id).one()
+			self.assertIsNotNone(orm.created_datetime)
+			self.assertTrue(isinstance(orm.created_datetime, datetime))
+			self.assertIsNone(orm.updated_datetime)
+
+		# Update and save again; created should remain, updated may still be None without update logic
+		w.name = "E1-updated"
+		w.sync_status = WalletSyncStatus.COMPLETED
+		assert self.repo.save_wallet(w)
+		got2 = self.repo.get_wallet_by_id(w.id)
+		self.assertEqual(got2.sync_status, WalletSyncStatus.COMPLETED)
+		with self.wr.SessionLocal() as session:
+			orm2 = session.query(self.wr.WalletORM).filter(self.wr.WalletORM.wallet_id == w.id).one()
+			self.assertIsNotNone(orm2.created_datetime)
+
+	def test_null_api_credentials_roundtrip(self):
+		# Create wallet with None credentials explicitly (bypass helper to avoid auto-generation)
+		w = self.factory.create_wallet(
+			wallet_type=self.WalletType.KRAKEN,
+			name="N1",
+			reference_fiat="EUR",
+			portfolio_id="pfN",
+			description="no creds",
+			api_key=None,
+			api_secret=None,
+			is_active=True,
+			last_sync=None,
+		)
+		assert self.repo.save_wallet(w)
+
+		# Retrieve and ensure credentials remain None
+		got = self.repo.get_wallet_by_id(w.id)
+		self.assertIsNotNone(got)
+		self.assertIsNone(got.api_key)
+		self.assertIsNone(got.api_secret)
+
+		# Verify DB columns are NULL
+		with self.wr.SessionLocal() as session:
+			orm = session.query(self.wr.WalletORM).filter(self.wr.WalletORM.wallet_id == w.id).one()
+			self.assertIsNone(orm.api_key)
+			self.assertIsNone(orm.api_secret)
 
 	def test_save_and_get_wallet(self):
 		wallet = self._make_wallet(name="Test1", api_key="abc", api_secret="xyz")
