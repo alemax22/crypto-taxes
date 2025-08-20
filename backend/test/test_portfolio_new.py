@@ -92,17 +92,6 @@ class TestPortfolioInitialization(unittest.TestCase):
         self.assertEqual(portfolio.portfolio_id, custom_id)
         self.assertEqual(portfolio.reference_asset, custom_asset)
         self.assertEqual(portfolio.created_datetime, custom_datetime)
-    
-    def test_portfolio_to_dict(self):
-        """Test portfolio to_dict method."""
-        portfolio = Portfolio(reference_asset="GBP")
-        
-        portfolio_dict = portfolio.to_dict()
-        
-        self.assertEqual(portfolio_dict['portfolio_id'], portfolio.portfolio_id)
-        self.assertEqual(portfolio_dict['reference_asset'], "GBP")
-        self.assertIsInstance(portfolio_dict['created_datetime'], str)
-        self.assertEqual(portfolio_dict['wallet_count'], 0)
 
 
 @pytest.mark.unit
@@ -157,12 +146,9 @@ class TestPortfolioWalletOperations(unittest.TestCase):
             name="Test Wallet",
             reference_fiat="EUR",
             portfolio_id=self.portfolio.portfolio_id,
-            id=wallet_id,
             description="",
             api_key="test_key",
-            api_secret="test_secret",
-            is_active=False,
-            sync_status=WalletSyncStatus.NOT_SYNCHRONIZED
+            api_secret="test_secret"
         )
         
         # Verify wallet was saved
@@ -170,7 +156,7 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         
         # Verify wallet ID is returned
         self.assertIsNotNone(wallet_id)
-        self.assertTrue(wallet_id.startswith("KRAKEN-"))
+        self.assertEqual(wallet_id, mock_wallet.id)
     
     def test_add_wallet_unsupported_type(self):
         """Test adding wallet with unsupported type."""
@@ -204,44 +190,59 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         
         self.assertIsNone(wallet_id)
     
-    def test_add_wallet_skip_auth(self):
-        """Test adding wallet with authentication skipped."""
-        # Mock wallet
-        mock_wallet = MockWallet(
-            name="Test Wallet",
-            id="KRAKEN-test-uuid",
-            reference_fiat="EUR",
-            portfolio_id=self.portfolio.portfolio_id,
-            is_active=False  # Even though inactive, should still be added due to skip_auth
-        )
-        
-        self.mock_wallet_factory.return_value.create_wallet.return_value = mock_wallet
-        self.mock_repository.return_value.save_wallet.return_value = True
-        
-        wallet_id = self.portfolio.add_wallet(
-            wallet_type=WalletType.KRAKEN,
-            name="Test Wallet",
-            skip_auth=True
-        )
-        
-        self.assertIsNotNone(wallet_id)
-        # Verify wallet was saved even though authentication would fail
-        self.mock_repository.return_value.save_wallet.assert_called_once_with(mock_wallet)
-    
     def test_remove_wallet_success(self):
         """Test successful wallet removal."""
+        # Mock wallet that belongs to the portfolio
+        mock_wallet = MockWallet(
+            name="Test Wallet",
+            id="test-wallet-id",
+            reference_fiat="EUR",
+            portfolio_id=self.portfolio.portfolio_id
+        )
+        
+        self.mock_repository.return_value.get_wallet_by_id.return_value = mock_wallet
         self.mock_repository.return_value.delete_wallet_by_id.return_value = True
         
         success = self.portfolio.remove_wallet("test-wallet-id")
         
         self.assertTrue(success)
-        self.mock_repository.return_value.delete_wallet_by_id.assert_called_once_with(
-            "test-wallet-id", 
-            self.portfolio.portfolio_id
+        self.mock_repository.return_value.delete_wallet_by_id.assert_called_once_with("test-wallet-id")
+    
+    def test_remove_wallet_not_found(self):
+        """Test wallet removal when wallet not found."""
+        self.mock_repository.return_value.get_wallet_by_id.return_value = None
+        
+        success = self.portfolio.remove_wallet("non-existent-id")
+        
+        self.assertFalse(success)
+    
+    def test_remove_wallet_wrong_portfolio(self):
+        """Test wallet removal when wallet belongs to different portfolio."""
+        # Mock wallet that belongs to different portfolio
+        mock_wallet = MockWallet(
+            name="Test Wallet",
+            id="test-wallet-id",
+            reference_fiat="EUR",
+            portfolio_id="different-portfolio-id"
         )
+        
+        self.mock_repository.return_value.get_wallet_by_id.return_value = mock_wallet
+        
+        success = self.portfolio.remove_wallet("test-wallet-id")
+        
+        self.assertFalse(success)
     
     def test_remove_wallet_failure(self):
         """Test wallet removal failure."""
+        # Mock wallet that belongs to the portfolio
+        mock_wallet = MockWallet(
+            name="Test Wallet",
+            id="test-wallet-id",
+            reference_fiat="EUR",
+            portfolio_id=self.portfolio.portfolio_id
+        )
+        
+        self.mock_repository.return_value.get_wallet_by_id.return_value = mock_wallet
         self.mock_repository.return_value.delete_wallet_by_id.return_value = False
         
         success = self.portfolio.remove_wallet("test-wallet-id")
@@ -261,6 +262,7 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         wallets = self.portfolio.list_wallets()
         
         self.assertEqual(len(wallets), 2)
+        self.assertEqual(wallets, mock_wallets)
         self.mock_repository.return_value.get_all_wallets_in_portfolio.assert_called_once_with(
             self.portfolio.portfolio_id
         )
@@ -270,36 +272,57 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         mock_wallet = MockWallet("Test Wallet", "test-id", "EUR", self.portfolio.portfolio_id)
         self.mock_repository.return_value.get_wallet_by_id.return_value = mock_wallet
         
-        wallet_dict = self.portfolio.get_wallet_by_id("test-id")
+        wallet = self.portfolio.get_wallet_by_id("test-id")
         
-        self.assertIsNotNone(wallet_dict)
-        self.assertEqual(wallet_dict['wallet_id'], "test-id")
-        self.assertEqual(wallet_dict['name'], "Test Wallet")
-        self.mock_repository.return_value.get_wallet_by_id.assert_called_once_with(
-            "test-id", 
-            self.portfolio.portfolio_id
-        )
+        self.assertIsNotNone(wallet)
+        self.assertEqual(wallet, mock_wallet)
+        self.mock_repository.return_value.get_wallet_by_id.assert_called_once_with("test-id")
     
     def test_get_wallet_by_id_not_found(self):
         """Test getting non-existent wallet by ID."""
         self.mock_repository.return_value.get_wallet_by_id.return_value = None
         
-        wallet_dict = self.portfolio.get_wallet_by_id("non-existent-id")
+        wallet = self.portfolio.get_wallet_by_id("non-existent-id")
         
-        self.assertIsNone(wallet_dict)
+        self.assertIsNone(wallet)
     
-    def test_load_wallet(self):
-        """Test loading wallet instance."""
-        mock_wallet = MockWallet("Test Wallet", "test-id", "EUR", self.portfolio.portfolio_id)
+    def test_get_wallet_by_id_wrong_portfolio(self):
+        """Test getting wallet that belongs to different portfolio."""
+        # Mock wallet that belongs to different portfolio
+        mock_wallet = MockWallet(
+            name="Test Wallet",
+            id="test-id",
+            reference_fiat="EUR",
+            portfolio_id="different-portfolio-id"
+        )
+        
         self.mock_repository.return_value.get_wallet_by_id.return_value = mock_wallet
         
-        wallet = self.portfolio.load_wallet("test-id")
+        wallet = self.portfolio.get_wallet_by_id("test-id")
         
-        self.assertEqual(wallet, mock_wallet)
-        self.mock_repository.return_value.get_wallet_by_id.assert_called_once_with(
-            "test-id", 
-            self.portfolio.portfolio_id
+        self.assertIsNone(wallet)
+    
+    def test_is_wallet_in_portfolio(self):
+        """Test checking if wallet belongs to portfolio."""
+        # Wallet in portfolio
+        wallet_in_portfolio = MockWallet(
+            name="Test Wallet",
+            id="test-id",
+            reference_fiat="EUR",
+            portfolio_id=self.portfolio.portfolio_id
         )
+        
+        self.assertTrue(self.portfolio.is_wallet_in_portfolio(wallet_in_portfolio))
+        
+        # Wallet not in portfolio
+        wallet_not_in_portfolio = MockWallet(
+            name="Test Wallet",
+            id="test-id",
+            reference_fiat="EUR",
+            portfolio_id="different-portfolio-id"
+        )
+        
+        self.assertFalse(self.portfolio.is_wallet_in_portfolio(wallet_not_in_portfolio))
 
 
 @pytest.mark.unit

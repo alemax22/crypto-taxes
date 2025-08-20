@@ -217,7 +217,7 @@ if __name__ == "__main__":  # pragma: no cover
     
     # Create a new portfolio
     portfolio = Portfolio(reference_asset="EUR")
-    print(f"Created portfolio: {portfolio.to_dict()}")
+    print(f"Created portfolio: {portfolio.portfolio_id}")
     
     # Load API credentials
     with open("api.key", "r") as file:
@@ -228,7 +228,7 @@ if __name__ == "__main__":  # pragma: no cover
     # Add a wallet to the portfolio
     wallet_id = portfolio.add_wallet(
         wallet_type=WalletType.KRAKEN,
-        name="Kraken Ale",
+        name="Kraken Test Wallet",
         api_key=api_key,
         api_secret=api_secret
     )

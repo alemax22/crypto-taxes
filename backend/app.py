@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wallets.portfolio import Portfolio
-from wallets.wallet_enums import WalletType
+from wallets.wallet_enums import WalletType, WalletSyncStatus
 from db import init_db, engine
 
 # Configure logging
@@ -49,7 +49,7 @@ class WalletCreateRequest(BaseModel):
     api_key: Optional[str] = Field(None, description="API key for the wallet")
     api_secret: Optional[str] = Field(None, description="API secret for the wallet")
     description: Optional[str] = Field("", description="Optional description of the wallet")
-    skip_auth: Optional[bool] = Field(False, description="Skip external authentication (testing only)")
+
 
 class WalletResponse(BaseModel):
     wallet_id: str
@@ -112,10 +112,27 @@ async def list_wallets():
             )
         
         wallets = portfolio.list_wallets()
+        # Convert wallet objects to dictionaries
+        wallet_dicts = []
+        for wallet in wallets:
+            wallet_dict = {
+                'wallet_id': wallet.id,
+                'wallet_type': wallet.get_wallet_type().value,
+                'name': wallet.name,
+                'description': wallet.description or '',
+                'is_active': bool(wallet.is_active),
+                'created_datetime': '',
+                'updated_datetime': None,
+                'reference_fiat': wallet.reference_fiat,
+                'sync_status': (wallet.sync_status.value if wallet.sync_status else WalletSyncStatus.NOT_SYNCHRONIZED.value),
+                'portfolio_id': wallet.portfolio_id,
+            }
+            wallet_dicts.append(wallet_dict)
+        
         return ApiResponse(
             success=True,
-            message=f"Found {len(wallets)} wallets",
-            data=wallets
+            message=f"Found {len(wallet_dicts)} wallets",
+            data=wallet_dicts
         )
     except Exception as e:
         logger.error(f"Error listing wallets: {e}")
@@ -166,8 +183,7 @@ async def add_wallet(wallet_request: WalletCreateRequest):
             name=wallet_request.name,
             api_key=wallet_request.api_key,
             api_secret=wallet_request.api_secret,
-            description=wallet_request.description,
-            skip_auth=bool(wallet_request.skip_auth)
+            description=wallet_request.description
         )
 
         logger.info(f"Wallet ID: {wallet_id}")
@@ -207,15 +223,28 @@ async def get_wallet(wallet_id: str):
         
         wallet = portfolio.get_wallet_by_id(wallet_id)
 
-        # Remove api_key and api_secret from the wallet
-        wallet.pop("api_key", None)
-        wallet.pop("api_secret", None)
-
         if wallet:
+            # Convert wallet object to dictionary and remove sensitive data
+            wallet_dict = {
+                'wallet_id': wallet.id,
+                'wallet_type': wallet.get_wallet_type().value,
+                'name': wallet.name,
+                'description': wallet.description or '',
+                'is_active': bool(wallet.is_active),
+                'created_datetime': '',
+                'updated_datetime': None,
+                'reference_fiat': wallet.reference_fiat,
+                'sync_status': (wallet.sync_status.value if wallet.sync_status else WalletSyncStatus.NOT_SYNCHRONIZED.value),
+                'portfolio_id': wallet.portfolio_id,
+            }
+        else:
+            wallet_dict = None
+
+        if wallet_dict:
             return ApiResponse(
                 success=True,
                 message="Wallet found",
-                data=wallet
+                data=wallet_dict
             )
         else:
             raise HTTPException(
@@ -271,7 +300,7 @@ async def synchronize_wallets(start_date: Optional[str] = None, end_date: Option
                 detail="Portfolio not initialized"
             )
         
-        results = portfolio.synchronize_all_wallets(start_date, end_date)
+        results = portfolio.synchronize_all_wallets(start_date)
         return ApiResponse(
             success=True,
             message="Synchronization completed",
