@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -16,8 +14,11 @@ services:
       - FLASK_ENV=production
       - FLASK_RUN_HOST=0.0.0.0
       - FLASK_RUN_PORT=5000
+      - DATABASE_URL=postgresql+psycopg2://cryptotaxes:cryptotaxes@postgres:5432/cryptotaxes
     networks:
       - crypto-network
+    depends_on:
+      - postgres
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -50,8 +51,25 @@ services:
       retries: 3
       start_period: 40s
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: crypto-taxes-postgres
+    environment:
+      - POSTGRES_DB=cryptotaxes
+      - POSTGRES_USER=cryptotaxes
+      - POSTGRES_PASSWORD=cryptotaxes
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - crypto-network
+    restart: unless-stopped
+
 volumes:
   crypto_data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:

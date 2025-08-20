@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Portfolio Management
-Handles multiple wallets/exchanges for a user
+Handles portfolio entities that contain multiple wallets/exchanges
 """
 
 import os
@@ -21,156 +21,143 @@ from wallets.wallet_repository import PostgresWalletRepository
 
 logger = logging.getLogger(__name__)
 
-PORTFOLIO_ENCRYPTION_KEY_FILE_NAME = "portfolio_key.key"
-
-'''
-wallet_id: str - unique identifier for the wallet
-wallet_type: str - type of the wallet (Kraken, Binance, etc.)
-name: str - name of the wallet, given by the user
-description: str - description of the wallet (optional)
-api_key: str - API key for the wallet
-api_secret: str - API secret for the wallet
-is_active: bool - whether the wallet is active, wallet method authenticate() must return True. 
-                  Even though we don't save inactive wallets, it might happen that a wallet becomes inactive after being added.
-created_datetime: datetime - date and time when the wallet was created
-updated_datetime: datetime - date and time when the wallet was last updated, updated when wallet method synchronize() is called
-reference_fiat: str - reference fiat of the wallet
-sync_status: str - status of the synchronization process
-    - not synchronized: the wallet has not been synchronized yet
-    - in progress: the synchronization is in progress
-    - completed: the synchronization has been completed
-    - failed: the synchronization has failed
-'''
-WALLET_CONFIG_COLUMNS: List[str] = [
-    'wallet_id',
-    'wallet_type',
-    'name',
-    'description',
-    'api_key',
-    'api_secret',
-    'is_active',
-    'created_datetime',
-    'updated_datetime',
-    'reference_fiat',
-    'sync_status',
-    'portfolio_id',
-]
-
 class Portfolio:
-    """Portfolio class to manage multiple wallets/exchanges."""
+    """Portfolio class representing a portfolio entity that contains multiple wallets."""
     
-    def __init__(self, portfolio_id: str = "default_portfolio"):
-        """Initialize the portfolio (DB-backed)."""
+    def __init__(self, 
+                 portfolio_id: Optional[str] = None,
+                 reference_asset: str = "EUR",
+                 created_datetime: Optional[datetime] = None):
+        """
+        Initialize a portfolio.
+        
+        Args:
+            portfolio_id: Unique identifier for the portfolio. If None, generates a new one with PF- prefix
+            reference_asset: Reference asset for the portfolio (e.g., "EUR", "USD")
+            created_datetime: Creation datetime. If None, uses current UTC time
+        """
         self.wallet_factory = WalletFactory()
         self.repository = PostgresWalletRepository()
-        self.portfolio_id = portfolio_id
-        logger.info("Portfolio initialized (DB-backed)")
-    
-    # DB-backed implementation helpers
-    def _wallet_to_dict(self, wallet: Wallet, include_sensitive: bool = True) -> Dict[str, Any]:
-        data: Dict[str, Any] = {
-            'wallet_id': wallet.id,
-            'wallet_type': wallet.get_wallet_type().value,
-            'name': wallet.name,
-            'description': wallet.description or '',
-            'is_active': bool(wallet.is_active),
-            'created_datetime': '',
-            'updated_datetime': None,
-            'reference_fiat': wallet.reference_fiat,
-            'sync_status': (wallet.sync_status.value if wallet.sync_status else WalletSyncStatus.NOT_SYNCHRONIZED.value),
-            'portfolio_id': wallet.portfolio_id,
-        }
-        if include_sensitive:
-            data['api_key'] = wallet.api_key
-            data['api_secret'] = wallet.api_secret
-        return data
-    
-    def list_wallets(self) -> List[Dict[str, Any]]:
-        """List all wallets in the portfolio."""
-        wallets = self.repository.get_all_wallets_in_portfolio(self.portfolio_id)
-        return [self._wallet_to_dict(w, include_sensitive=False) for w in wallets]
-    
-    def get_wallet_by_id(self, wallet_id: str) -> Optional[Dict[str, Any]]:
-        """Get wallet configuration by ID."""
-        wallet = self.repository.get_wallet_by_id(wallet_id, self.portfolio_id)
-        return self._wallet_to_dict(wallet) if wallet else None
-    
-    def load_wallet(self, wallet_id: str) -> Optional[Wallet]:
-        """Load a wallet instance by ID."""
-        return self.repository.get_wallet_by_id(wallet_id, self.portfolio_id)
-    
-    def _load_wallet_from_config(self, wallet_config: Dict[str, Any]) -> Optional[Wallet]:
-        """Deprecated in DB-backed implementation."""
-        return None
+        
+        # Generate portfolio ID if not provided
+        if portfolio_id is None:
+            self.portfolio_id = f"PF-{str(uuid.uuid4())}"
+        else:
+            self.portfolio_id = portfolio_id
+            
+        self.reference_asset = reference_asset
+        self.created_datetime = created_datetime or datetime.now(timezone.utc)
+        
+        logger.info(f"Portfolio initialized with ID: {self.portfolio_id}, reference asset: {self.reference_asset}")
     
     def add_wallet(self, 
                    wallet_type: WalletType, 
                    name: str, 
-                   reference_fiat: str,
                    api_key: str = None, 
                    api_secret: str = None, 
-                   description: str = "",
-                   portfolio_id: str = "default_portfolio",
-                   skip_auth: bool = False) -> Optional[str]:
-        """Add a new wallet to the portfolio."""
-        # Validate wallet type by attempting to create a test instance
-        test_wallet = self.wallet_factory.create_wallet(
-            wallet_type=wallet_type,
-            name="test",
-            reference_fiat=reference_fiat,
-            portfolio_id=portfolio_id,
-            id="test"
-        )
-        if not test_wallet:
-            logger.error(f"Unsupported wallet type: {wallet_type.value}")
-            return None
+                   description: str = "") -> Optional[str]:
+        """
+        Add a new wallet to this portfolio.
         
-        # Generate unique wallet ID (keep previous pattern)
-        wallet_id = self._generate_wallet_id(wallet_type.value, name)
+        Args:
+            wallet_type: Type of wallet to create
+            name: Name of the wallet
+            api_key: API key for authentication
+            api_secret: API secret for authentication
+            description: Description of the wallet
+            skip_auth: Skip authentication check (for testing)
+            
+        Returns:
+            Wallet ID if successful, None otherwise
+        """
+    
         try:
             wallet_instance = self.wallet_factory.create_wallet(
                 wallet_type=wallet_type,
                 name=name,
-                reference_fiat=reference_fiat,
-                portfolio_id=portfolio_id,
-                id=wallet_id,
+                reference_fiat=self.reference_asset,
+                portfolio_id=self.portfolio_id,
                 description=description,
                 api_key=api_key,
                 api_secret=api_secret,
-                is_active=False,
-                sync_status=WalletSyncStatus.NOT_SYNCHRONIZED,
             )
+            
             if not wallet_instance:
                 logger.error("Failed to create wallet instance")
                 return None
-            # Test authentication unless skipped (for integration tests/dev)
-            if not skip_auth:
-                if wallet_instance.authenticate():
-                    wallet_instance.is_active = True
-                else:
-                    logger.error(f"Authentication failed for wallet {name}. Wallet will not be added.")
-                    return None
-            # Persist
+                
+            # Test authentication
+            if not wallet_instance.authenticate():
+                logger.error(f"Authentication failed for wallet {name}. Wallet will not be added.")
+                return None
+                    
+            # Persist wallet
             if self.repository.save_wallet(wallet_instance):
-                logger.info(f"Added wallet: {name} ({wallet_type}) with ID: {wallet_id}")
-                return wallet_id
-            logger.error("Failed to persist wallet")
-            return None
+                logger.info(f"Added wallet: {name} ({wallet_type}) with ID: {wallet_instance.id} to portfolio {self.portfolio_id}")
+                return wallet_instance.id
+            else:
+                logger.error("Failed to persist wallet")
+                return None
+                
         except Exception as e:
             logger.error(f"Error adding wallet: {e}")
             return None
     
     def remove_wallet(self, wallet_id: str) -> bool:
-        """Remove a wallet from the portfolio."""
-        return self.repository.delete_wallet_by_id(wallet_id, self.portfolio_id)
-    
-    def synchronize_all_wallets(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
         """
-        Synchronize all active wallets.
+        Remove a wallet from this portfolio.
+        
+        Args:
+            wallet_id: ID of the wallet to remove
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        wallet = self.get_wallet_by_id(wallet_id)
+        if wallet is None or not self.is_wallet_in_portfolio(wallet):
+            logger.error(f"Wallet {wallet_id} does not belong to portfolio {self.portfolio_id}")
+            return False
+        success = self.repository.delete_wallet_by_id(wallet_id)
+        if success:
+            logger.info(f"Removed wallet {wallet_id} from portfolio {self.portfolio_id}")
+        else:
+            logger.error(f"Failed to remove wallet {wallet_id} from portfolio {self.portfolio_id}")
+        return success
+    
+    def list_wallets(self) -> List[Dict[str, Any]]:
+        """
+        List all wallets in this portfolio.
+        
+        Returns:
+            List of wallet dictionaries (without sensitive data)
+        """
+        wallets = self.repository.get_all_wallets_in_portfolio(self.portfolio_id)
+        return wallets
+    
+    def get_wallet_by_id(self, wallet_id: str) -> Optional[Wallet]:
+        """
+        Get wallet configuration by ID.
+        
+        Args:
+            wallet_id: ID of the wallet to retrieve
+            
+        Returns:
+            Wallet dictionary with sensitive data, or None if not found
+        """
+        wallet = self.repository.get_wallet_by_id(wallet_id)
+
+        if wallet is not None and not self.is_wallet_in_portfolio(wallet):
+            logger.error(f"Wallet {wallet_id} does not belong to portfolio {self.portfolio_id}")
+            return None
+
+        return wallet
+    
+    def synchronize_all_wallets(self, start_date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Synchronize all active wallets in this portfolio.
         
         Args:
             start_date: Start date for synchronization (YYYY-MM-DD format)
-            end_date: End date for synchronization (YYYY-MM-DD format)
             
         Returns:
             Dictionary with synchronization results for each wallet
@@ -185,7 +172,7 @@ class Portfolio:
             wallet_name = wallet_instance.name
             
             try:
-                logger.info(f"Synchronizing wallet: {wallet_name}")
+                logger.info(f"Synchronizing wallet: {wallet_name} in portfolio {self.portfolio_id}")
                 is_active = wallet_instance.authenticate()
                 if is_active:
                     success, error = wallet_instance.synchronize(start_date)
@@ -210,18 +197,16 @@ class Portfolio:
                 }
         
         return results
-    
-    def _generate_wallet_id(self, wallet_type: str, name: str) -> str:
-        """Generate a unique wallet ID."""
-        # Create base ID from type and name (remove "Wallet" suffix if present)
-        base_name = wallet_type.replace("Wallet", "")
-        base_id = f"{base_name.upper()}"
+
+    def is_wallet_in_portfolio(self, wallet: Wallet) -> bool:
+        """
+        Check if a wallet is in a portfolio.
         
-        # Generate a random UUID
-        uuid_str = str(uuid.uuid4())
-        wallet_id = f"{base_id}-{uuid_str}"
-        
-        return wallet_id
+        Args:
+            portfolio: Portfolio instance
+            wallet_id: ID of the wallet to check
+        """
+        return wallet.portfolio_id == self.portfolio_id
 
 if __name__ == "__main__":  # pragma: no cover
     # Configure logging
@@ -229,20 +214,35 @@ if __name__ == "__main__":  # pragma: no cover
         level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    
+    # Create a new portfolio
+    portfolio = Portfolio(reference_asset="EUR")
+    print(f"Created portfolio: {portfolio.to_dict()}")
+    
+    # Load API credentials
     with open("api.key", "r") as file:
         api_key = file.readline().strip()
         api_secret = file.readline().strip()
     logging.info(f"API key and secret loaded")
-    portfolio = Portfolio()
-    logging.info(portfolio.list_wallets())
+    
+    # Add a wallet to the portfolio
     wallet_id = portfolio.add_wallet(
         wallet_type=WalletType.KRAKEN,
         name="Kraken Ale",
-        reference_fiat="EUR",
         api_key=api_key,
         api_secret=api_secret
     )
-    results = portfolio.synchronize_all_wallets()
-    logging.info(results)
-    portfolio.remove_wallet(wallet_id)
-    print(portfolio.list_wallets())
+    
+    if wallet_id:
+        print(f"Added wallet with ID: {wallet_id}")
+        print(f"Portfolio wallets: {portfolio.list_wallets()}")
+        
+        # Synchronize all wallets
+        results = portfolio.synchronize_all_wallets()
+        print(f"Synchronization results: {results}")
+        
+        # Remove the wallet
+        portfolio.remove_wallet(wallet_id)
+        print(f"After removal: {portfolio.list_wallets()}")
+    else:
+        print("Failed to add wallet")

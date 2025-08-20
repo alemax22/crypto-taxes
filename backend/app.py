@@ -46,7 +46,6 @@ app.add_middleware(
 class WalletCreateRequest(BaseModel):
     wallet_type: str = Field(..., description="Type of wallet (e.g., 'Kraken')")
     name: str = Field(..., description="Name of the wallet")
-    reference_fiat: str = Field(..., description="Reference fiat currency (e.g., 'EUR', 'USD')")
     api_key: Optional[str] = Field(None, description="API key for the wallet")
     api_secret: Optional[str] = Field(None, description="API secret for the wallet")
     description: Optional[str] = Field("", description="Optional description of the wallet")
@@ -78,7 +77,7 @@ async def startup_event():
     try:
         # Ensure database tables exist (safe if DB not used yet)
         init_db()
-        portfolio = Portfolio()
+        portfolio = Portfolio(reference_asset="EUR")
         logger.info("Portfolio initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize portfolio: {e}")
@@ -165,11 +164,9 @@ async def add_wallet(wallet_request: WalletCreateRequest):
         wallet_id = portfolio.add_wallet(
             wallet_type=wallet_type_enum,
             name=wallet_request.name,
-            reference_fiat=wallet_request.reference_fiat,
             api_key=wallet_request.api_key,
             api_secret=wallet_request.api_secret,
             description=wallet_request.description,
-            portfolio_id="default_portfolio",
             skip_auth=bool(wallet_request.skip_auth)
         )
 
