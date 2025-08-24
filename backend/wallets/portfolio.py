@@ -11,11 +11,12 @@ from datetime import datetime, timezone
 import sys
 import uuid
 from enum import Enum
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from wallets.wallet import Wallet
-from wallets.wallet_enums import WalletType, WalletSyncStatus
+from wallets.wallet_enums import WalletType
 from wallets.wallet_factory import WalletFactory
 from wallets.wallet_repository import PostgresWalletRepository
 
@@ -41,7 +42,7 @@ class Portfolio:
         
         # Generate portfolio ID if not provided
         if portfolio_id is None:
-            self.portfolio_id = f"PF-{str(uuid.uuid4())}"
+            self.portfolio_id = self._generate_portfolio_id()
         else:
             self.portfolio_id = portfolio_id
             
@@ -55,7 +56,7 @@ class Portfolio:
                    name: str, 
                    api_key: str = None, 
                    api_secret: str = None, 
-                   description: str = "") -> Optional[str]:
+                   description: str = "") -> Optional[Wallet]:
         """
         Add a new wallet to this portfolio.
         
@@ -65,10 +66,9 @@ class Portfolio:
             api_key: API key for authentication
             api_secret: API secret for authentication
             description: Description of the wallet
-            skip_auth: Skip authentication check (for testing)
             
         Returns:
-            Wallet ID if successful, None otherwise
+            Wallet instance if successful, None otherwise
         """
     
         try:
@@ -86,15 +86,17 @@ class Portfolio:
                 logger.error("Failed to create wallet instance")
                 return None
                 
-            # Test authentication
-            if not wallet_instance.authenticate():
+            # Authenticate wallet
+            is_wallet_authenticated = wallet_instance.authenticate()
+            if not is_wallet_authenticated:
                 logger.error(f"Authentication failed for wallet {name}. Wallet will not be added.")
                 return None
                     
-            # Persist wallet
-            if self.repository.save_wallet(wallet_instance):
+            # Persist wallet to database
+            is_wallet_saved = self.repository.save_wallet(wallet_instance)
+            if is_wallet_saved:
                 logger.info(f"Added wallet: {name} ({wallet_type}) with ID: {wallet_instance.id} to portfolio {self.portfolio_id}")
-                return wallet_instance.id
+                return wallet_instance
             else:
                 logger.error("Failed to persist wallet")
                 return None
@@ -124,12 +126,12 @@ class Portfolio:
             logger.error(f"Failed to remove wallet {wallet_id} from portfolio {self.portfolio_id}")
         return success
     
-    def list_wallets(self) -> List[Dict[str, Any]]:
+    def list_wallets(self) -> List[Wallet]:
         """
         List all wallets in this portfolio.
         
         Returns:
-            List of wallet dictionaries (without sensitive data)
+            List of wallet instances
         """
         wallets = self.repository.get_all_wallets_in_portfolio(self.portfolio_id)
         return wallets
@@ -142,7 +144,7 @@ class Portfolio:
             wallet_id: ID of the wallet to retrieve
             
         Returns:
-            Wallet dictionary with sensitive data, or None if not found
+            Wallet instance, or None if not found
         """
         wallet = self.repository.get_wallet_by_id(wallet_id)
 
@@ -152,50 +154,93 @@ class Portfolio:
 
         return wallet
     
-    def synchronize_all_wallets(self, start_date: Optional[str] = None) -> Dict[str, Any]:
+    def _synchronize_single_wallet(self, wallet_instance: Wallet, start_date: Optional[str] = None) -> tuple[str, Dict[str, Any]]:
         """
-        Synchronize all active wallets in this portfolio.
+        Synchronize a single wallet.
+        
+        Args:
+            wallet_instance: Wallet instance to synchronize
+            start_date: Start date for synchronization (YYYY-MM-DD format)
+            
+        Returns:
+            Tuple of (wallet_id, result_dict)
+        """
+        wallet_id = wallet_instance.id
+        wallet_name = wallet_instance.name
+        
+        try:
+            logger.info(f"Synchronizing wallet: {wallet_name} in portfolio {self.portfolio_id}")
+            is_wallet_authenticated = wallet_instance.authenticate()
+            if is_wallet_authenticated:
+                success, error = wallet_instance.synchronize(start_date)
+                logger.info(f"Synchronization result for wallet {wallet_name}: {success} {error}")
+                result = {
+                    'name': wallet_name,
+                    'success': success,
+                    'error': error
+                }
+            else:
+                logger.error(f"Authentication failed for wallet {wallet_name}. Skipping synchronization.")
+                result = {
+                    'name': wallet_name,
+                    'success': False,
+                    'error': 'Authentication failed'
+                }
+        except Exception as e:
+            result = {
+                'name': wallet_name,
+                'success': False,
+                'error': str(e)
+            }
+        
+        return wallet_id, result
+
+    def synchronize_all_wallets(self, start_date: Optional[str] = None, max_workers: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Synchronize all active wallets in this portfolio in parallel.
         
         Args:
             start_date: Start date for synchronization (YYYY-MM-DD format)
-            
+            max_workers: Maximum number of worker threads. If None, uses min(32, os.cpu_count() + 4)
+        
         Returns:
             Dictionary with synchronization results for each wallet
         """
         results = {}
-        
-        # TODO: Parallelize the synchronization
-
         wallets = self.repository.get_all_wallets_in_portfolio(self.portfolio_id)
-        for wallet_instance in wallets:
-            wallet_id = wallet_instance.id
-            wallet_name = wallet_instance.name
+        
+        if not wallets:
+            logger.info(f"No wallets found in portfolio {self.portfolio_id}")
+            return results
+        
+        logger.info(f"Starting parallel synchronization of {len(wallets)} wallets in portfolio {self.portfolio_id}")
+        
+        # Use ThreadPoolExecutor for parallel execution
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all wallet synchronization tasks
+            future_to_wallet = {
+                executor.submit(self._synchronize_single_wallet, wallet, start_date): wallet
+                for wallet in wallets
+            }
             
-            try:
-                logger.info(f"Synchronizing wallet: {wallet_name} in portfolio {self.portfolio_id}")
-                is_active = wallet_instance.authenticate()
-                if is_active:
-                    success, error = wallet_instance.synchronize(start_date)
-                    logging.info(f"Synchronization result for wallet {wallet_name}: {success} {error}")
-                    results[wallet_id] = {
-                        'name': wallet_name,
-                        'success': success,
-                        'error': error
-                    }
-                else:
-                    logger.error(f"Authentication failed for wallet {wallet_name}. Skipping synchronization.")
+            # Collect results as they complete
+            for future in as_completed(future_to_wallet):
+                wallet = future_to_wallet[future]
+                try:
+                    wallet_id, result = future.result()
+                    results[wallet_id] = result
+                    logger.info(f"Completed synchronization for wallet {result['name']}: {'Success' if result['success'] else 'Failed'}")
+                except Exception as e:
+                    wallet_id = wallet.id
+                    wallet_name = wallet.name
+                    logger.error(f"Unexpected error during synchronization of wallet {wallet_name}: {e}")
                     results[wallet_id] = {
                         'name': wallet_name,
                         'success': False,
-                        'error': 'Authentication failed'
+                        'error': f'Unexpected error: {str(e)}'
                     }
-            except Exception as e:
-                results[wallet_id] = {
-                    'name': wallet_name,
-                    'success': False,
-                    'error': str(e)
-                }
         
+        logger.info(f"Completed parallel synchronization of {len(wallets)} wallets in portfolio {self.portfolio_id}")
         return results
 
     def is_wallet_in_portfolio(self, wallet: Wallet) -> bool:
@@ -207,6 +252,13 @@ class Portfolio:
             wallet_id: ID of the wallet to check
         """
         return wallet.portfolio_id == self.portfolio_id
+
+    @staticmethod
+    def _generate_portfolio_id() -> str:
+        """
+        Generate a unique portfolio ID.
+        """
+        return f"PF-{str(uuid.uuid4())}"
 
 if __name__ == "__main__":  # pragma: no cover
     # Configure logging

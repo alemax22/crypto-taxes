@@ -54,8 +54,9 @@ class WalletFactory:
         except (NameError, AttributeError) as e:
             logger.error(f"Wallet class not found for type {wallet_type.value}: {e}")
             return None
-     
-    def _generate_wallet_id(self, wallet_type: WalletType, portfolio_id: str, api_key: Optional[str]) -> str:
+    
+    @staticmethod  
+    def _generate_wallet_id(wallet_type: WalletType, portfolio_id: str, api_key: Optional[str]) -> str:
         """
         Generate a deterministic wallet ID.
         
