@@ -10,7 +10,7 @@ import os
 import logging
 import sys
 from sqlalchemy import Column, String, DateTime, text
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -87,7 +87,7 @@ class PortfolioORM(Base):
     portfolio_id = Column(String(128), primary_key=True)
     user_id = Column(String(128), nullable=False) 
     reference_asset = Column(String(8))
-    created_datetime = Column(DateTime, default=datetime.utcnow)
+    created_datetime = Column(DateTime, default=datetime.now(timezone.utc))
     updated_datetime = Column(DateTime, nullable=True)
 
 

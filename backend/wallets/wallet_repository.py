@@ -12,7 +12,7 @@ import logging
 from cryptography.fernet import Fernet
 import sys
 from sqlalchemy import Column, String, Boolean, DateTime, text
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 # Add parent directory to path to import config module
@@ -23,7 +23,6 @@ from config import WALLETS_DIR
 from wallets.wallet import Wallet
 from wallets.wallet_factory import WalletFactory
 from db import SessionLocal, Base, engine, SCHEMA_NAME
-from sqlalchemy.dialects.postgresql import insert
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ class WalletORM(Base):
     api_key = Column(String(2048), nullable=True)
     api_secret = Column(String(2048), nullable=True)
     is_active = Column(Boolean, default=False)
-    created_datetime = Column(DateTime, default=datetime.utcnow)
+    created_datetime = Column(DateTime, default=datetime.now(timezone.utc))
     updated_datetime = Column(DateTime, nullable=True)
     reference_fiat = Column(String(8))
     sync_status = Column(String(64), default=WalletSyncStatus.NOT_SYNCHRONIZED.value)
