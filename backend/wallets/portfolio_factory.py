@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 import sys
 import os
+import uuid
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,7 +44,6 @@ class PortfolioFactory:
             name: Name of the portfolio
             reference_asset: Reference asset for the portfolio (e.g., "EUR", "USD")
             portfolio_id: Unique identifier for the portfolio (optional, will be generated if not provided)
-            description: Description of the portfolio (optional)
             created_datetime: Creation datetime (optional, will use current UTC time if not provided)
             
         Returns:
@@ -53,6 +53,11 @@ class PortfolioFactory:
             ValueError: If required parameters are invalid
         """
         try:
+
+            if not portfolio_id:
+                portfolio_id = self._generate_portfolio_id()
+                logger.info(f"Generated portfolio ID: {portfolio_id}")
+
             portfolio_instance = Portfolio(
                 user_id=user_id,
                 portfolio_id=portfolio_id,
@@ -105,6 +110,7 @@ class PortfolioFactory:
             
             # Create portfolio instance
             portfolio = self.create_portfolio(
+                user_id=user_id,
                 reference_asset=reference_asset,
                 portfolio_id=portfolio_id,
                 created_datetime=created_datetime
@@ -115,3 +121,10 @@ class PortfolioFactory:
         except Exception as e:
             logger.error(f"Failed to create portfolio from data: {str(e)}")
             return None
+        
+    @staticmethod  
+    def _generate_portfolio_id() -> str:
+        """
+        Generate a unique portfolio ID.
+        """
+        return f"PF-{str(uuid.uuid4())}"

@@ -43,7 +43,7 @@ class TestPortfolioInitialization(unittest.TestCase):
     def test_portfolio_initialization_default(self):
         """Test portfolio initialization with default parameters."""
 
-        portfolio = Portfolio(user_id="TEST_USER_ID")
+        portfolio = Portfolio(portfolio_id="PF-TEST-123", user_id="TEST_USER_ID")
         
         # Verify portfolio ID starts with PF-
         self.assertTrue(portfolio.portfolio_id.startswith("PF-"))

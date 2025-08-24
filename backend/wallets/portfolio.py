@@ -42,15 +42,10 @@ class Portfolio:
         self.user_id = user_id
         self.wallet_factory = WalletFactory()
         self.repository = PostgresWalletRepository()
-        
-        # Generate portfolio ID if not provided
-        if portfolio_id is None:
-            self.portfolio_id = self._generate_portfolio_id()
-        else:
-            self.portfolio_id = portfolio_id
-            
+        self.portfolio_id = portfolio_id
         self.reference_asset = reference_asset
         self.created_datetime = created_datetime or datetime.now(timezone.utc)
+        self.updated_datetime = None
         
         logger.info(f"Portfolio initialized with ID: {self.portfolio_id}, reference asset: {self.reference_asset}")
     
@@ -255,13 +250,6 @@ class Portfolio:
             wallet_id: ID of the wallet to check
         """
         return wallet.portfolio_id == self.portfolio_id
-
-    @staticmethod
-    def _generate_portfolio_id() -> str:
-        """
-        Generate a unique portfolio ID.
-        """
-        return f"PF-{str(uuid.uuid4())}"
 
 if __name__ == "__main__":  # pragma: no cover
     # Configure logging
