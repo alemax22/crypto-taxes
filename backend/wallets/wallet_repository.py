@@ -57,15 +57,14 @@ class WalletRepository(ABC):
         pass
     
     @abstractmethod
-    def get_wallet_by_id(self, wallet_id: str, portfolio_id: str) -> Optional[Wallet]:
+    def get_wallet_by_id(self, wallet_id: str) -> Optional[Wallet]:
         """
         Find a wallet configuration by its ID.
         
         Args:
             wallet_id: Unique identifier of the wallet
-            portfolio_id: Unique identifier of the portfolio
         Returns:
-            Dict containing wallet configuration or None if not found
+            Wallet instance or None if not found
         """
         pass
     
@@ -83,13 +82,12 @@ class WalletRepository(ABC):
         pass
     
     @abstractmethod
-    def delete_wallet_by_id(self, wallet_id: str, portfolio_id: str) -> bool:
+    def delete_wallet_by_id(self, wallet_id: str) -> bool:
         """
         Delete a wallet from the repository.
         
         Args:
             wallet_id: Unique identifier of the wallet to delete
-            portfolio_id: Unique identifier of the portfolio
         Returns:
             bool: True if deletion was successful, False otherwise
         """
