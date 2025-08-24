@@ -43,7 +43,7 @@ class TestPortfolioInitialization(unittest.TestCase):
     def test_portfolio_initialization_default(self):
         """Test portfolio initialization with default parameters."""
 
-        portfolio = Portfolio()
+        portfolio = Portfolio(user_id="TEST_USER_ID")
         
         # Verify portfolio ID starts with PF-
         self.assertTrue(portfolio.portfolio_id.startswith("PF-"))
@@ -66,6 +66,7 @@ class TestPortfolioInitialization(unittest.TestCase):
         custom_datetime = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
         portfolio = Portfolio(
+            user_id="TEST_USER_ID",
             portfolio_id=custom_id,
             reference_asset=custom_asset,
             created_datetime=custom_datetime
@@ -91,7 +92,10 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         mock_repository = mock_repository_patch.start()
         mock_repository.return_value = MagicMock()
         self.patches.append(mock_repository_patch)
-        self.portfolio = Portfolio(reference_asset="EUR")
+        self.portfolio = Portfolio(
+            user_id="TEST_USER_ID", 
+            reference_asset="EUR"
+        )
         
     def tearDown(self):
         """Clean up test fixtures."""
@@ -314,7 +318,10 @@ class TestPortfolioSynchronization(unittest.TestCase):
         mock_repository = mock_repository_patch.start()
         mock_repository.return_value = MagicMock()
         self.patches.append(mock_repository_patch)
-        self.portfolio = Portfolio(reference_asset="EUR")
+        self.portfolio = Portfolio(
+            user_id="TEST_USER_ID",
+            reference_asset="EUR"
+        )
         
     def tearDown(self):
         """Clean up test fixtures."""

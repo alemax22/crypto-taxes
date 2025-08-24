@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 import sys
 import uuid
-from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path to import config module
@@ -26,6 +25,7 @@ class Portfolio:
     """Portfolio class representing a portfolio entity that contains multiple wallets."""
     
     def __init__(self, 
+                 user_id: str,
                  portfolio_id: Optional[str] = None,
                  reference_asset: str = "EUR",
                  created_datetime: Optional[datetime] = None):
@@ -33,10 +33,13 @@ class Portfolio:
         Initialize a portfolio.
         
         Args:
+            user_id: Unique identifier for the user owning the portfolio.
             portfolio_id: Unique identifier for the portfolio. If None, generates a new one with PF- prefix
             reference_asset: Reference asset for the portfolio (e.g., "EUR", "USD")
             created_datetime: Creation datetime. If None, uses current UTC time
         """
+
+        self.user_id = user_id
         self.wallet_factory = WalletFactory()
         self.repository = PostgresWalletRepository()
         
