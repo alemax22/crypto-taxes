@@ -146,10 +146,15 @@ class Portfolio:
         """
         wallet = self.repository.get_wallet_by_id(wallet_id)
 
-        if wallet is not None and not self.is_wallet_in_portfolio(wallet):
+        if wallet is None:
+            logger.info(f"Wallet {wallet_id} not found in portfolio {self.portfolio_id}")
+            return None
+        elif not self.is_wallet_in_portfolio(wallet):
             logger.error(f"Wallet {wallet_id} does not belong to portfolio {self.portfolio_id}")
             return None
-
+        else:
+            logger.info(f"Wallet {wallet_id} found in portfolio {self.portfolio_id}")
+        
         return wallet
     
     def _synchronize_single_wallet(self, wallet_instance: Wallet, start_date: Optional[str] = None) -> tuple[str, Dict[str, Any]]:
@@ -259,7 +264,7 @@ if __name__ == "__main__":  # pragma: no cover
     )
     
     # Create a new portfolio
-    portfolio = Portfolio(reference_asset="EUR")
+    portfolio = Portfolio(user_id="1234567890", portfolio_id="PF-1234567890", reference_asset="EUR")
     print(f"Created portfolio: {portfolio.portfolio_id}")
     
     # Load API credentials
@@ -269,15 +274,15 @@ if __name__ == "__main__":  # pragma: no cover
     logging.info(f"API key and secret loaded")
     
     # Add a wallet to the portfolio
-    wallet_id = portfolio.add_wallet(
+    wallet = portfolio.add_wallet(
         wallet_type=WalletType.KRAKEN,
         name="Kraken Test Wallet",
         api_key=api_key,
         api_secret=api_secret
     )
     
-    if wallet_id:
-        print(f"Added wallet with ID: {wallet_id}")
+    if wallet:
+        print(f"Added wallet with ID: {wallet.id}")
         print(f"Portfolio wallets: {portfolio.list_wallets()}")
         
         # Synchronize all wallets
@@ -285,7 +290,7 @@ if __name__ == "__main__":  # pragma: no cover
         print(f"Synchronization results: {results}")
         
         # Remove the wallet
-        portfolio.remove_wallet(wallet_id)
+        portfolio.remove_wallet(wallet.id)
         print(f"After removal: {portfolio.list_wallets()}")
     else:
         print("Failed to add wallet")
