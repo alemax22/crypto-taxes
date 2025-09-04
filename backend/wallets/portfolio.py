@@ -26,17 +26,19 @@ class Portfolio:
     
     def __init__(self, 
                  user_id: str,
-                 portfolio_id: Optional[str] = None,
-                 reference_asset: str = "EUR",
-                 created_datetime: Optional[datetime] = None):
+                 portfolio_id: str,
+                 reference_asset: str,
+                 created_datetime: Optional[datetime],
+                 updated_datetime: Optional[datetime]):
         """
         Initialize a portfolio.
         
         Args:
             user_id: Unique identifier for the user owning the portfolio.
-            portfolio_id: Unique identifier for the portfolio. If None, generates a new one with PF- prefix
+            portfolio_id: Unique identifier for the portfolio.
             reference_asset: Reference asset for the portfolio (e.g., "EUR", "USD")
-            created_datetime: Creation datetime. If None, uses current UTC time
+            created_datetime: Creation datetime.
+            updated_datetime: Last updated datetime.
         """
 
         self.user_id = user_id
@@ -44,8 +46,8 @@ class Portfolio:
         self.repository = PostgresWalletRepository()
         self.portfolio_id = portfolio_id
         self.reference_asset = reference_asset
-        self.created_datetime = created_datetime or datetime.now(timezone.utc)
-        self.updated_datetime = None
+        self.created_datetime = created_datetime
+        self.updated_datetime = updated_datetime
         
         logger.info(f"Portfolio initialized with ID: {self.portfolio_id}, reference asset: {self.reference_asset}")
     
@@ -260,7 +262,7 @@ if __name__ == "__main__":  # pragma: no cover
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(name)s - %(levelname)s - [%(threadName)s:%(process)d] - %(message)s'
     )
     
     # Create a new portfolio

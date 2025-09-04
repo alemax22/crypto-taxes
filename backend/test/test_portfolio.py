@@ -40,24 +40,29 @@ class TestPortfolioInitialization(unittest.TestCase):
         for patch in self.patches:
             patch.stop()
     
-    def test_portfolio_initialization_default(self):
-        """Test portfolio initialization with default parameters."""
+    def test_portfolio_initialization_required_parameters(self):
+        """Test portfolio initialization with all required parameters."""
 
-        portfolio = Portfolio(portfolio_id="PF-TEST-123", user_id="TEST_USER_ID")
+        custom_datetime = datetime(2023, 1, 1, tzinfo=timezone.utc)
+        portfolio = Portfolio(
+            user_id="TEST_USER_ID",
+            portfolio_id="PF-TEST-123",
+            reference_asset="EUR",
+            created_datetime=custom_datetime,
+            updated_datetime=None
+        )
         
-        # Verify portfolio ID starts with PF-
-        self.assertTrue(portfolio.portfolio_id.startswith("PF-"))
+        # Verify portfolio ID
+        self.assertEqual(portfolio.portfolio_id, "PF-TEST-123")
         
-        # Verify reference asset is EUR by default
+        # Verify reference asset
         self.assertEqual(portfolio.reference_asset, "EUR")
         
-        # Verify created_datetime is set
-        self.assertIsInstance(portfolio.created_datetime, datetime)
-        
-        # Verify it's a recent datetime
-        now = datetime.now(timezone.utc)
-        time_diff = abs((now - portfolio.created_datetime).total_seconds())
-        self.assertLess(time_diff, 10)  # Should be within 10 seconds
+        # Verify created_datetime
+        self.assertEqual(portfolio.created_datetime, custom_datetime)
+
+        # Verify updated_datetime
+        self.assertIsNone(portfolio.updated_datetime)
     
     def test_portfolio_initialization_custom(self):
         """Test portfolio initialization with custom parameters."""
@@ -69,7 +74,8 @@ class TestPortfolioInitialization(unittest.TestCase):
             user_id="TEST_USER_ID",
             portfolio_id=custom_id,
             reference_asset=custom_asset,
-            created_datetime=custom_datetime
+            created_datetime=custom_datetime,
+            updated_datetime=None
         )
         
         self.assertEqual(portfolio.portfolio_id, custom_id)
@@ -93,8 +99,11 @@ class TestPortfolioWalletOperations(unittest.TestCase):
         mock_repository.return_value = MagicMock()
         self.patches.append(mock_repository_patch)
         self.portfolio = Portfolio(
-            user_id="TEST_USER_ID", 
-            reference_asset="EUR"
+            user_id="TEST_USER_ID",
+            portfolio_id="PF-TEST-123",
+            reference_asset="EUR",
+            created_datetime=datetime.now(timezone.utc),
+            updated_datetime=None
         )
         
     def tearDown(self):
@@ -320,7 +329,10 @@ class TestPortfolioSynchronization(unittest.TestCase):
         self.patches.append(mock_repository_patch)
         self.portfolio = Portfolio(
             user_id="TEST_USER_ID",
-            reference_asset="EUR"
+            portfolio_id="PF-TEST-SYNC-123",
+            reference_asset="EUR",
+            created_datetime=datetime.now(timezone.utc),
+            updated_datetime=None
         )
         
     def tearDown(self):

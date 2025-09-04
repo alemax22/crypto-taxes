@@ -795,7 +795,7 @@ if __name__ == "__main__": # pragma: no cover
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(name)s - %(levelname)s - [%(threadName)s:%(process)d] - %(message)s'
     )
     # read api key and secret from file api.key which contains the api key and api secret one per line
     with open("api.key", "r") as file:

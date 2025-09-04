@@ -66,6 +66,7 @@ class TestPortfolioFactory(unittest.TestCase):
         self.assertIsNotNone(portfolio.portfolio_id)  # Should be generated
         self.assertTrue(portfolio.portfolio_id.startswith("PF-"))
         self.assertIsNotNone(portfolio.created_datetime)  # Should be set to current time
+        self.assertIsNone(portfolio.updated_datetime)  # Should be None for new portfolios
 
     def test_create_portfolio_generates_id_when_not_provided(self):
         """Test that portfolio ID is generated when not provided."""
@@ -85,13 +86,16 @@ class TestPortfolioFactory(unittest.TestCase):
         """Test that provided portfolio ID is preserved."""
         user_id = "TEST-USER-101"
         provided_id = "PF-CUSTOM-999"
+        custom_datetime = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
         portfolio = self.factory.create_portfolio(
             user_id=user_id,
-            portfolio_id=provided_id
+            portfolio_id=provided_id,
+            created_datetime=custom_datetime
         )
 
         self.assertEqual(portfolio.portfolio_id, provided_id)
+        self.assertEqual(portfolio.created_datetime, custom_datetime)
 
     def test_create_portfolio_handles_exception(self):
         """Test that exceptions during portfolio creation are handled gracefully."""
@@ -108,7 +112,8 @@ class TestPortfolioFactory(unittest.TestCase):
             'user_id': 'TEST-USER-123',
             'portfolio_id': 'PF-RAW-123',
             'reference_asset': 'GBP',
-            'created_datetime': '2023-01-15T10:30:00+00:00'
+            'created_datetime': '2023-01-15T10:30:00+00:00',
+            'updated_datetime': '2023-01-15T11:30:00+00:00'
         }
 
         portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
@@ -119,13 +124,16 @@ class TestPortfolioFactory(unittest.TestCase):
         self.assertEqual(portfolio.portfolio_id, 'PF-RAW-123')
         self.assertEqual(portfolio.reference_asset, 'GBP')
         self.assertEqual(portfolio.created_datetime.isoformat(), '2023-01-15T10:30:00+00:00')
+        self.assertEqual(portfolio.updated_datetime.isoformat(), '2023-01-15T11:30:00+00:00')
 
-    def test_create_portfolio_from_raw_data_with_defaults(self):
+    def test_create_portfolio_from_raw_data_happy_path(self):
         """Test portfolio creation from raw data with missing optional fields."""
         raw_data = {
             'user_id': 'TEST-USER-456',
-            'portfolio_id': 'PF-DEFAULT-456'
-            # Missing reference_asset and created_datetime
+            'portfolio_id': 'PF-DEFAULT-456',
+            'created_datetime': '2023-01-15T10:30:00+00:00',
+            'updated_datetime': '2023-01-15T11:30:00+00:00',
+            'reference_asset': 'GBP'
         }
 
         portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
@@ -134,8 +142,9 @@ class TestPortfolioFactory(unittest.TestCase):
         self.assertIsInstance(portfolio, Portfolio)
         self.assertEqual(portfolio.user_id, 'TEST-USER-456')
         self.assertEqual(portfolio.portfolio_id, 'PF-DEFAULT-456')
-        self.assertEqual(portfolio.reference_asset, 'EUR')  # Default value
-        self.assertIsNotNone(portfolio.created_datetime)  # Should be set to current time
+        self.assertEqual(portfolio.reference_asset, 'GBP')
+        self.assertEqual(portfolio.created_datetime.isoformat(), '2023-01-15T10:30:00+00:00')
+        self.assertEqual(portfolio.updated_datetime.isoformat(), '2023-01-15T11:30:00+00:00')
 
     def test_create_portfolio_from_raw_data_missing_user_id(self):
         """Test that missing user_id returns None."""
@@ -154,20 +163,62 @@ class TestPortfolioFactory(unittest.TestCase):
         raw_data = {
             'user_id': 'TEST-USER-789',
             'portfolio_id': 'PF-INVALID-DATE',
-            'created_datetime': 'invalid-datetime-format'
+            'created_datetime': 'invalid-datetime-format',
+            'updated_datetime': 'invalid-datetime-format'
         }
 
         portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
 
-        self.assertIsNotNone(portfolio)
-        self.assertIsInstance(portfolio, Portfolio)
-        # Should use current time when datetime parsing fails
-        self.assertIsNotNone(portfolio.created_datetime)
+        self.assertIsNone(portfolio)
+
+    def test_create_portfolio_from_raw_data_missing_portfolio_id(self):
+        """Test that missing portfolio_id returns None."""
+        raw_data = {
+            'user_id': 'TEST-USER-111',
+            'reference_asset': 'USD'
+        }
+
+        portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
+
+        self.assertIsNone(portfolio)
+    
+    def test_create_portfolio_from_raw_data_missing_reference_asset(self):
+        """Test that missing reference_asset returns None."""
+        raw_data = {
+            'user_id': 'TEST-USER-111',
+            'portfolio_id': 'PF-MISSING-REFERENCE-ASSET'
+        }
+    
+        portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
+
+        self.assertIsNone(portfolio)
+
+    def test_create_portfolio_from_raw_data_missing_created_datetime(self):
+        """Test that missing created_datetime returns None."""
+        raw_data = {
+            'user_id': 'TEST-USER-111',
+            'portfolio_id': 'PF-MISSING-CREATED-DATETIME'
+        }
+    
+        portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
+
+        self.assertIsNone(portfolio)
+
+    def test_create_portfolio_from_raw_data_missing_updated_datetime(self):
+        """Test that missing updated_datetime returns None."""
+        raw_data = {
+            'user_id': 'TEST-USER-111',
+            'portfolio_id': 'PF-MISSING-UPDATED-DATETIME'
+        }
+    
+        portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
+
+        self.assertIsNone(portfolio)
 
     def test_create_portfolio_from_raw_data_handles_exception(self):
         """Test that exceptions during raw data processing are handled gracefully."""
-        with patch.object(self.factory, 'create_portfolio') as mock_create:
-            mock_create.side_effect = Exception("Test exception")
+        with patch('wallets.portfolio_factory.Portfolio') as mock_portfolio_class:
+            mock_portfolio_class.side_effect = Exception("Test exception")
 
             raw_data = {
                 'user_id': 'TEST-USER-999',
@@ -183,7 +234,9 @@ class TestPortfolioFactory(unittest.TestCase):
         raw_data = {
             'user_id': 'TEST-USER-101',
             'portfolio_id': 'PF-Z-TIMEZONE',
-            'created_datetime': '2023-06-20T15:45:30Z'
+            'reference_asset': 'USD',
+            'created_datetime': '2023-06-20T15:45:30Z',
+            'updated_datetime': '2023-06-20T15:45:30Z'
         }
 
         portfolio = self.factory.create_portfolio_from_raw_data(raw_data)
@@ -192,6 +245,8 @@ class TestPortfolioFactory(unittest.TestCase):
         self.assertIsInstance(portfolio, Portfolio)
         # Should parse Z timezone correctly
         self.assertEqual(portfolio.created_datetime.isoformat(), '2023-06-20T15:45:30+00:00')
+        self.assertEqual(portfolio.updated_datetime.isoformat(), '2023-06-20T15:45:30+00:00')
+        self.assertEqual(portfolio.reference_asset, 'USD')
 
     def test_create_portfolio_from_raw_data_empty_user_id(self):
         """Test that empty user_id returns None."""

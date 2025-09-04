@@ -36,9 +36,10 @@ class PortfolioRepository(ABC):
     def save_portfolio(self, portfolio: Portfolio) -> bool:
         """
         Save a portfolio configuration to the repository.
+        Automatically updates the portfolio's updated_datetime to current UTC time.
         
         Args:
-            portfolio: Portfolio instance
+            portfolio: Portfolio instance (will be modified to update timestamp)
             
         Returns:
             bool: True if save was successful, False otherwise
@@ -87,8 +88,9 @@ class PortfolioORM(Base):
     portfolio_id = Column(String(128), primary_key=True)
     user_id = Column(String(128), nullable=False) 
     reference_asset = Column(String(8))
-    created_datetime = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_datetime = Column(DateTime, nullable=True)
+    # If the portolio is in the database, it menas that the object was created and updated
+    created_datetime = Column(DateTime, nullable=False)
+    updated_datetime = Column(DateTime, nullable=False)
 
 
 class PostgresPortfolioRepository(PortfolioRepository):
@@ -112,8 +114,8 @@ class PostgresPortfolioRepository(PortfolioRepository):
             'portfolio_id': orm.portfolio_id,
             'user_id': orm.user_id,
             'reference_asset': orm.reference_asset,
-            'created_datetime': orm.created_datetime.isoformat() if orm.created_datetime else '',
-            'updated_datetime': orm.updated_datetime.isoformat() if orm.updated_datetime else '',
+            'created_datetime': orm.created_datetime.isoformat(),
+            'updated_datetime': orm.updated_datetime.isoformat(),
         }
         return self.portfolio_factory.create_portfolio_from_raw_data(raw)
 
@@ -122,12 +124,16 @@ class PostgresPortfolioRepository(PortfolioRepository):
             'portfolio_id': portfolio.portfolio_id,
             'user_id': portfolio.user_id,
             'reference_asset': portfolio.reference_asset,
-            'updated_datetime': datetime.utcnow(),
+            'created_datetime': portfolio.created_datetime,
+            'updated_datetime': portfolio.updated_datetime,
         }
 
     def save_portfolio(self, portfolio: Portfolio) -> bool:
         try:
             with SessionLocal() as session:
+                # Update the portfolio's updated_datetime before saving
+                portfolio.updated_datetime = datetime.now(timezone.utc)
+                
                 data = self._serialize_portfolio(portfolio)
                 session.merge(PortfolioORM(**data))
                 session.commit()
@@ -143,6 +149,7 @@ class PostgresPortfolioRepository(PortfolioRepository):
                     PortfolioORM.portfolio_id == portfolio_id,
                 ).one_or_none()
                 if not orm:
+                    logger.error(f"Portfolio {portfolio_id} not found")
                     return None
                 return self._deserialize_portfolio(orm)
         except Exception as e:
@@ -156,6 +163,7 @@ class PostgresPortfolioRepository(PortfolioRepository):
                     PortfolioORM.user_id == user_id,
                 ).one_or_none()
                 if not orm:
+                    logger.error(f"User {user_id} has no portfolio")
                     return None
                 return self._deserialize_portfolio(orm)
         except Exception as e:
@@ -169,6 +177,7 @@ class PostgresPortfolioRepository(PortfolioRepository):
                     PortfolioORM.portfolio_id == portfolio_id,
                 ).one_or_none()
                 if not orm:
+                    logger.error(f"Portfolio {portfolio_id} not found")
                     return False
                 session.delete(orm)
                 session.commit()
