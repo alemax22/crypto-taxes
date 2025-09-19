@@ -126,6 +126,181 @@ async def root():
         }
     )
 
+def ensure_user_has_portfolio(user_id: str = DEFAULT_USER_ID) -> Portfolio:
+    """
+    Ensure the user has a portfolio, creating one if necessary.
+    Returns the Portfolio instance.
+    """
+    portfolio_repo = PostgresPortfolioRepository()
+    portfolio_instance = portfolio_repo.get_user_portfolio(user_id)
+    
+    if not portfolio_instance:
+        logger.info(f"Creating default portfolio for user '{user_id}'")
+        portfolio_instance = portfolio_factory.create_portfolio(
+            user_id=user_id,
+            reference_asset="EUR"  # Default reference asset
+        )
+        
+        if portfolio_instance:
+            is_saved = portfolio_repo.save_portfolio(portfolio_instance)
+            if not is_saved:
+                raise Exception("Failed to save default portfolio")
+        else:
+            raise Exception("Failed to create default portfolio")
+    
+    return portfolio_instance
+
+
+@app.get("/portfolios", response_model=ApiResponse)
+async def list_portfolios():
+    """List portfolios for the default user (always returns exactly one portfolio)."""
+    try:
+        # Ensure user has a portfolio
+        portfolio_instance = ensure_user_has_portfolio()
+        
+        # Convert portfolio to response format
+        portfolio_dict = {
+            'portfolio_id': portfolio_instance.portfolio_id,
+            'user_id': portfolio_instance.user_id,
+            'reference_asset': portfolio_instance.reference_asset,
+            'created_datetime': portfolio_instance.created_datetime.isoformat() if portfolio_instance.created_datetime else '',
+            'updated_datetime': portfolio_instance.updated_datetime.isoformat() if portfolio_instance.updated_datetime else ''
+        }
+        
+        return ApiResponse(
+            success=True,
+            message=f"Found 1 portfolio for user '{DEFAULT_USER_ID}'",
+            data=[portfolio_dict]  # Always return array with single portfolio
+        )
+    except Exception as e:
+        logger.error(f"Error listing portfolios: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list portfolios: {str(e)}"
+        )
+
+
+@app.post("/portfolios", response_model=ApiResponse)
+async def create_portfolio(portfolio_request: PortfolioCreateRequest):
+    """Create or update the user's portfolio (enforces one portfolio per user)."""
+    try:
+        portfolio_repo = PostgresPortfolioRepository()
+        
+        # Check if user already has a portfolio
+        existing_portfolio = portfolio_repo.get_user_portfolio(DEFAULT_USER_ID)
+        
+        if existing_portfolio:
+            # Update existing portfolio instead of creating new one
+            logger.info(f"User '{DEFAULT_USER_ID}' already has portfolio, updating reference asset")
+            existing_portfolio.reference_asset = portfolio_request.reference_asset
+            
+            is_saved = portfolio_repo.save_portfolio(existing_portfolio)
+            if not is_saved:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to update existing portfolio"
+                )
+            
+            portfolio_dict = {
+                'portfolio_id': existing_portfolio.portfolio_id,
+                'user_id': existing_portfolio.user_id,
+                'reference_asset': existing_portfolio.reference_asset,
+                'created_datetime': existing_portfolio.created_datetime.isoformat() if existing_portfolio.created_datetime else '',
+                'updated_datetime': existing_portfolio.updated_datetime.isoformat() if existing_portfolio.updated_datetime else ''
+            }
+            
+            return ApiResponse(
+                success=True,
+                message=f"Portfolio updated successfully with reference asset '{portfolio_request.reference_asset}'",
+                data=portfolio_dict
+            )
+        else:
+            # Create new portfolio
+            portfolio_instance = portfolio_factory.create_portfolio(
+                user_id=DEFAULT_USER_ID,
+                reference_asset=portfolio_request.reference_asset
+            )
+            
+            if not portfolio_instance:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to create portfolio instance"
+                )
+            
+            is_saved = portfolio_repo.save_portfolio(portfolio_instance)
+            if not is_saved:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to save portfolio to database"
+                )
+            
+            portfolio_dict = {
+                'portfolio_id': portfolio_instance.portfolio_id,
+                'user_id': portfolio_instance.user_id,
+                'reference_asset': portfolio_instance.reference_asset,
+                'created_datetime': portfolio_instance.created_datetime.isoformat() if portfolio_instance.created_datetime else '',
+                'updated_datetime': portfolio_instance.updated_datetime.isoformat() if portfolio_instance.updated_datetime else ''
+            }
+            
+            return ApiResponse(
+                success=True,
+                message=f"Portfolio created successfully with reference asset '{portfolio_request.reference_asset}'",
+                data=portfolio_dict
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating/updating portfolio: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create/update portfolio: {str(e)}"
+        )
+
+
+@app.delete("/portfolios/{portfolio_id}", response_model=ApiResponse)
+async def delete_portfolio(portfolio_id: str):
+    """Delete a portfolio by ID (enforces user ownership)."""
+    try:
+        # Get portfolio from repository to verify it exists and belongs to the user
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the default user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
+            )
+        
+        # Delete portfolio
+        is_deleted = portfolio_repo.delete_portfolio_by_id(portfolio_id)
+        
+        if not is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete portfolio '{portfolio_id}'"
+            )
+        
+        return ApiResponse(
+            success=True,
+            message=f"Portfolio '{portfolio_id}' deleted successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting portfolio: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete portfolio: {str(e)}"
+        )
+
+
 @app.get("/portfolios/{portfolio_id}/wallets", response_model=ApiResponse)
 async def list_wallets(portfolio_id: str):
     """List all wallets in the specified portfolio."""
@@ -138,6 +313,13 @@ async def list_wallets(portfolio_id: str):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
             )
         
         wallets = portfolio_instance.list_wallets()
@@ -196,6 +378,13 @@ async def add_wallet(portfolio_id: str, wallet_request: WalletCreateRequest):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
             )
         
         logger.info(f"Wallet request: {wallet_request}")
@@ -260,6 +449,13 @@ async def get_wallet(portfolio_id: str, wallet_id: str):
                 detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
+            )
+        
         wallet = portfolio_instance.get_wallet_by_id(wallet_id)
 
         if wallet:
@@ -320,6 +516,13 @@ async def remove_wallet(portfolio_id: str, wallet_id: str):
                 detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
+            )
+        
         # First verify the wallet exists and belongs to the portfolio
         wallet = portfolio_instance.get_wallet_by_id(wallet_id)
         if not wallet or wallet.portfolio_id != portfolio_id:
@@ -360,6 +563,13 @@ async def synchronize_wallets(portfolio_id: str, start_date: Optional[str] = Non
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
             )
         
         results = portfolio_instance.synchronize_all_wallets(start_date)
