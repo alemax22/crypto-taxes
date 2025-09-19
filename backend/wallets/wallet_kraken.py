@@ -630,10 +630,6 @@ class KrakenWallet(Wallet):
         """Create tradable asset matrix."""
         trad_response_json = self._get_tradable_assets_info()
         
-        # write to file trad_response_json.json
-        with open("trad_response_json.json", "w") as file:
-            json.dump(trad_response_json, file)
-        
         # Create DataFrame from API response
         tradable_asset_df = pd.DataFrame(trad_response_json["result"]).transpose()
         
