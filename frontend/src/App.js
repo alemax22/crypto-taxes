@@ -1,10 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import Wallets from './pages/Wallets';
 import Transactions from './pages/Transactions';
 import TaxSummary from './pages/TaxSummary';
 import Balance from './pages/Balance';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap-icons/font/bootstrap-icons.css';
+import './App.css';
+import './dark-theme.css';
 
 function App() {
   return (
@@ -21,21 +25,28 @@ function App() {
                 <Link className="nav-link" to="/">Dashboard</Link>
               </li>
               <li className="nav-item">
+                <Link className="nav-link" to="/wallets">Wallets</Link>
+              </li>
+              <li className="nav-item">
                 <Link className="nav-link" to="/transactions">Transactions</Link>
               </li>
               <li className="nav-item">
-                <Link className="nav-link" to="/tax-summary">Tax Summary</Link>
+                <Link className="nav-link" to="/tax-summary">Tax Reports</Link>
               </li>
               <li className="nav-item">
-                <Link className="nav-link" to="/balance">Balance</Link>
+                <Link className="nav-link" to="/balance">Settings</Link>
               </li>
             </ul>
+            <div className="navbar-nav">
+              <span className="badge bg-secondary me-3">Free Plan</span>
+            </div>
           </div>
         </div>
       </nav>
-      <main className="container py-4">
+      <main className="container-fluid py-4" style={{ maxWidth: '1200px' }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/wallets" element={<Wallets />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/tax-summary" element={<TaxSummary />} />
           <Route path="/balance" element={<Balance />} />
