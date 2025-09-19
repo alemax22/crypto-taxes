@@ -5,7 +5,7 @@ Base class for all wallet/exchange implementations
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from decimal import Decimal, InvalidOperation
 import pandas as pd
@@ -42,7 +42,8 @@ class Wallet(ABC):
                 api_key: Optional[str] = None,
                 api_secret: Optional[str] = None,
                 is_active: bool = False,
-                last_sync: Optional[datetime] = None,
+                created_datetime: Optional[datetime] = None,
+                updated_datetime: Optional[datetime] = None,
                 sync_status: WalletSyncStatus = WalletSyncStatus.NOT_SYNCHRONIZED):
         """
         Initialize the wallet.
@@ -56,7 +57,8 @@ class Wallet(ABC):
             api_key: API key for authentication (optional)
             api_secret: API secret for authentication (optional)
             is_active: Whether the wallet is active (optional)
-            last_sync: Last synchronization timestamp (optional)
+            created_datetime: When the wallet was created (optional)
+            updated_datetime: Last synchronization/update timestamp (optional)
             sync_status: Status of the synchronization process (optional)
         """
         self.name = name
@@ -67,7 +69,8 @@ class Wallet(ABC):
         self.api_key = api_key
         self.api_secret = api_secret
         self.is_active = is_active
-        self.last_sync = last_sync
+        self.created_datetime = created_datetime if created_datetime else datetime.now(timezone.utc)
+        self.updated_datetime = updated_datetime
         self.sync_status = sync_status
         
         logger.info(f"Initialized {self.name} wallet")
@@ -94,7 +97,7 @@ class Wallet(ABC):
         self.sync_status = WalletSyncStatus.IN_PROGRESS
         time.sleep(1)
         self.sync_status = WalletSyncStatus.COMPLETED
-        self.last_sync = datetime.now(timezone.utc)
+        self.updated_datetime = datetime.now(timezone.utc)
 
         The output dataframe should have the following columns:
         - datetime: datetime
@@ -138,7 +141,7 @@ class Wallet(ABC):
 
         balance_df = pd.DataFrame()
 
-        if self.last_sync is not None:
+        if self.updated_datetime is not None:
             existing_df = self._retrieve_local_ledger_data()
             if not existing_df.empty:
                 existing_df.sort_values(by="datetime", ascending=False, inplace=True)
@@ -221,7 +224,7 @@ class Wallet(ABC):
         Returns:
             Tuple with sync status and last sync timestamp
         """
-        return self.sync_status, self.last_sync
+        return self.sync_status, self.updated_datetime
     
     def _retrieve_local_ledger_data(self) -> pd.DataFrame:
         """Retrieve local ledger data."""
@@ -284,7 +287,7 @@ class Wallet(ABC):
 
     def __str__(self) -> str:
         """String representation of the wallet."""
-        return f"{self.name} Wallet (Authenticated: {self.is_active}, Last Sync: {self.last_sync})"
+        return f"{self.name} Wallet (Authenticated: {self.is_active}, Last Sync: {self.updated_datetime})"
     
     def _decimal_from_value(self, value: Any) -> Decimal:
         """Convert value to Decimal."""
@@ -292,4 +295,4 @@ class Wallet(ABC):
     
     def __repr__(self) -> str:
         """Detailed string representation of the wallet."""
-        return f"Wallet(name='{self.name}', authenticated={self.is_active}, last_sync={self.last_sync})" 
+        return f"Wallet(name='{self.name}', authenticated={self.is_active}, updated_datetime={self.updated_datetime}, created_datetime={self.created_datetime})" 

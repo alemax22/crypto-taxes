@@ -62,7 +62,10 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertEqual(self.wallet.api_key, self.test_api_key)
         self.assertEqual(self.wallet.api_secret, self.test_api_secret)
         self.assertFalse(self.wallet.is_active)
-        self.assertIsNone(self.wallet.last_sync)
+        self.assertIsNone(self.wallet.updated_datetime)
+        # Verify that created_datetime is automatically set when not provided
+        self.assertIsNotNone(self.wallet.created_datetime)
+        self.assertIsInstance(self.wallet.created_datetime, datetime)
     
     @patch.object(KrakenWallet, '_get_ledger')
     def test_authenticate_success(self, mock_get_ledger):
@@ -101,19 +104,19 @@ class TestKrakenWallet(unittest.TestCase):
     def test_authenticate_failure_missing_credentials(self, mock_post):
         """Test authentication failure with missing credentials."""
         # Test with missing credentials
-        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description")
+        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description")
         result1 = wallet1.authenticate()
         self.assertFalse(result1)
         self.assertFalse(wallet1.is_active)
 
         # Test with missing API key
-        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key=None, api_secret="test_api_secret_67890")
+        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", api_key=None, api_secret="test_api_secret_67890")
         result2 = wallet2.authenticate()
         self.assertFalse(result2)
         self.assertFalse(wallet2.is_active)
 
         # Test with missing API secret
-        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="test_api_key_12345", api_secret=None)
+        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", api_key="test_api_key_12345", api_secret=None)
         result3 = wallet3.authenticate()
         self.assertFalse(result3)
         self.assertFalse(wallet3.is_active)
@@ -125,19 +128,19 @@ class TestKrakenWallet(unittest.TestCase):
     def test_authenticate_failure_empty_credentials(self, mock_post):
         """Test authentication failure with empty string credentials."""
         # Test with empty API key
-        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="", api_secret="test_secret")
+        wallet1 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", api_key="", api_secret="test_secret")
         result1 = wallet1.authenticate()
         self.assertFalse(result1)
         self.assertFalse(wallet1.is_active)
         
         # Test with empty API secret
-        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="test_key", api_secret="")
+        wallet2 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", api_key="test_key", api_secret="")
         result2 = wallet2.authenticate()
         self.assertFalse(result2)
         self.assertFalse(wallet2.is_active)
         
         # Test with both empty
-        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "My Kraken Wallet Description", api_key="", api_secret="")
+        wallet3 = KrakenWallet("My Kraken Wallet Name", "KRAKEN-1", "EUR", "test_portfolio", "My Kraken Wallet Description", api_key="", api_secret="")
         result3 = wallet3.authenticate()
         self.assertFalse(result3)
         self.assertFalse(wallet3.is_active)
@@ -174,7 +177,7 @@ class TestKrakenWallet(unittest.TestCase):
         
         # Verify results
         self.assertTrue(result)
-        self.assertIsNotNone(self.wallet.last_sync)
+        self.assertIsNotNone(self.wallet.updated_datetime)
         self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
 
     @patch.object(time, 'sleep')
@@ -263,7 +266,7 @@ class TestKrakenWallet(unittest.TestCase):
         # Verify basic results
         self.assertTrue(success)
         self.assertIsNone(error)
-        self.assertIsNotNone(self.wallet.last_sync)
+        self.assertIsNotNone(self.wallet.updated_datetime)
         self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
         
         # Verify that _get_ledger was called exactly 4 times (for 178 transactions in batches of 50)

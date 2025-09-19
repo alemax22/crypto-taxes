@@ -90,7 +90,8 @@ class WalletFactory:
                      api_key: Optional[str] = None,
                      api_secret: Optional[str] = None,
                      is_active: bool = False,
-                     last_sync: Optional[datetime] = None,
+                     created_datetime: Optional[datetime] = None,
+                     updated_datetime: Optional[datetime] = None,
                      sync_status: WalletSyncStatus = WalletSyncStatus.NOT_SYNCHRONIZED) -> Optional[Wallet]:
         """
         Create a new Wallet instance with the specified parameters.
@@ -105,7 +106,8 @@ class WalletFactory:
             api_key: API key for authentication (optional)
             api_secret: API secret for authentication (optional)
             is_active: Whether the wallet is active (optional)
-            last_sync: Last synchronization timestamp (optional)
+            created_datetime: When the wallet was created (optional)
+            updated_datetime: Last synchronization/update timestamp (optional)
             sync_status: Status of the synchronization process (optional)
             
         Returns:
@@ -133,7 +135,8 @@ class WalletFactory:
                 api_key=api_key,
                 api_secret=api_secret,
                 is_active=is_active,
-                last_sync=last_sync,
+                created_datetime=created_datetime,
+                updated_datetime=updated_datetime,
                 sync_status=sync_status
             )
             
@@ -193,14 +196,23 @@ class WalletFactory:
             api_secret = wallet_data.get('api_secret')
             is_active = wallet_data.get('is_active', False)
             
-            # Handle last_sync
-            last_sync_str = wallet_data.get('last_sync')
-            last_sync = None
-            if last_sync_str:
+            # Handle created_datetime
+            created_datetime_str = wallet_data.get('created_datetime')
+            created_datetime = None
+            if created_datetime_str:
                 try:
-                    last_sync = datetime.fromisoformat(last_sync_str.replace('Z', '+00:00'))
+                    created_datetime = datetime.fromisoformat(created_datetime_str.replace('Z', '+00:00'))
                 except ValueError:
-                    logger.warning(f"Invalid last_sync format: {last_sync_str}")
+                    logger.warning(f"Invalid created_datetime format: {created_datetime_str}")
+            
+            # Handle updated_datetime  
+            updated_datetime_str = wallet_data.get('updated_datetime')
+            updated_datetime = None
+            if updated_datetime_str:
+                try:
+                    updated_datetime = datetime.fromisoformat(updated_datetime_str.replace('Z', '+00:00'))
+                except ValueError:
+                    logger.warning(f"Invalid updated_datetime format: {updated_datetime_str}")
             
             # Handle sync_status
             sync_status_str = wallet_data.get('sync_status','')
@@ -221,7 +233,8 @@ class WalletFactory:
                 api_key=api_key,
                 api_secret=api_secret,
                 is_active=is_active,
-                last_sync=last_sync,
+                created_datetime=created_datetime,
+                updated_datetime=updated_datetime,
                 sync_status=sync_status
             )
             

@@ -140,7 +140,7 @@ class WalletORM(Base):
     api_key = Column(String(2048), nullable=True)
     api_secret = Column(String(2048), nullable=True)
     is_active = Column(Boolean, default=False)
-    created_datetime = Column(DateTime, default=datetime.now(timezone.utc))
+    created_datetime = Column(DateTime, nullable=True)
     updated_datetime = Column(DateTime, nullable=True)
     reference_fiat = Column(String(8))
     sync_status = Column(String(64), default=WalletSyncStatus.NOT_SYNCHRONIZED.value)
@@ -192,6 +192,8 @@ class PostgresWalletRepository(WalletRepository):
             'api_key': enc_key,
             'api_secret': enc_secret,
             'is_active': bool(wallet.is_active),
+            'created_datetime': wallet.created_datetime,
+            'updated_datetime': wallet.updated_datetime,
             'reference_fiat': wallet.reference_fiat,
             'sync_status': (wallet.sync_status.value if wallet.sync_status else WalletSyncStatus.NOT_SYNCHRONIZED.value),
         }

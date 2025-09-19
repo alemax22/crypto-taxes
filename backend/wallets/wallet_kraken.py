@@ -50,7 +50,8 @@ class KrakenWallet(Wallet):
                  api_key: Optional[str] = None,
                  api_secret: Optional[str] = None,
                  is_active: bool = False, 
-                 last_sync: Optional[datetime] = None, 
+                 created_datetime: Optional[datetime] = None,
+                 updated_datetime: Optional[datetime] = None, 
                  sync_status: WalletSyncStatus = WalletSyncStatus.NOT_SYNCHRONIZED):
         """
         Initialize Kraken wallet.
@@ -64,10 +65,11 @@ class KrakenWallet(Wallet):
             api_key: Kraken API key (optional)
             api_secret: Kraken API secret (optional)
             is_active: Whether the wallet is active (optional)
-            last_sync: Last synchronization timestamp (optional)
+            created_datetime: When the wallet was created (optional)
+            updated_datetime: Last synchronization/update timestamp (optional)
             sync_status: Status of the synchronization process (optional)
         """
-        super().__init__(name, id, reference_fiat, portfolio_id, description, api_key, api_secret, is_active, last_sync, sync_status)
+        super().__init__(name, id, reference_fiat, portfolio_id, description, api_key, api_secret, is_active, created_datetime, updated_datetime, sync_status)
         
         # Kraken-specific settings
         self.base_url = 'https://api.kraken.com'
@@ -173,7 +175,7 @@ class KrakenWallet(Wallet):
                 return False, "Error synchronizing transactions"
             
             # Update last sync timestamp
-            self.last_sync = datetime.now(timezone.utc)
+            self.updated_datetime = datetime.now(timezone.utc)
             self.sync_status = WalletSyncStatus.COMPLETED
             return True, None
             

@@ -62,6 +62,15 @@ class TestWalletBaseMethods(unittest.TestCase):
         # Remove temporary directory
         shutil.rmtree(self.test_dir, ignore_errors=True)
     
+
+    def test_wallet_initialization_created_datetime_is_set(self):
+        """Test that created_datetime is set."""
+        self.assertIsNotNone(self.wallet.created_datetime)
+    
+    def test_wallet_initialization_updated_datetime_is_not_set(self):
+        """Test that updated_datetime is set."""
+        self.assertIsNone(self.wallet.updated_datetime)
+
     def test_retrieve_local_ledger_data_file_not_exists(self):
         """Test _retrieve_local_ledger_data when file doesn't exist."""
         # Ensure file doesn't exist
@@ -368,7 +377,7 @@ class TestWalletBaseMethods(unittest.TestCase):
     def test_get_balance_not_synchronized(self):
         """Test get_balance when wallet has not been synchronized."""
         # Ensure wallet is not synchronized
-        self.wallet.last_sync = None
+        self.wallet.updated_datetime = None
         
         # Call the method
         result = self.wallet.get_balance()
@@ -380,7 +389,7 @@ class TestWalletBaseMethods(unittest.TestCase):
     def test_get_balance_no_ledger_data(self):
         """Test get_balance when wallet is synchronized but no ledger data exists."""
         # Set wallet as synchronized
-        self.wallet.last_sync = datetime.now()
+        self.wallet.updated_datetime = datetime.now()
         
         # Ensure no ledger file exists
         if os.path.exists(self.wallet.ledger_file):
@@ -397,7 +406,7 @@ class TestWalletBaseMethods(unittest.TestCase):
     def test_get_balance_with_valid_data(self, mock_get_ohlc_data):
         """Test get_balance with valid ledger data."""
         # Set wallet as synchronized
-        self.wallet.last_sync = datetime.now()
+        self.wallet.updated_datetime = datetime.now()
         
         # Create test ledger data with multiple transactions for same assets
         datetime_list = [

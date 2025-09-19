@@ -69,7 +69,7 @@ class TestWalletRepository(unittest.TestCase):
 			api_key=api_key,
 			api_secret=api_secret,
 			is_active=True,
-			last_sync=None,
+			updated_datetime=None,
 		)
 
 	def test_enum_and_datetime_roundtrip(self):
@@ -111,7 +111,7 @@ class TestWalletRepository(unittest.TestCase):
 			api_key=None,
 			api_secret=None,
 			is_active=True,
-			last_sync=None,
+			updated_datetime=None,
 		)
 		assert self.repo.save_wallet(w)
 
@@ -120,6 +120,8 @@ class TestWalletRepository(unittest.TestCase):
 		self.assertIsNotNone(got)
 		self.assertIsNone(got.api_key)
 		self.assertIsNone(got.api_secret)
+		self.assertIsNotNone(got.created_datetime)
+		self.assertIsNone(got.updated_datetime)
 
 		# Verify DB columns are NULL
 		with self.wr.SessionLocal() as session:
@@ -135,6 +137,8 @@ class TestWalletRepository(unittest.TestCase):
 		self.assertEqual(got.name, "INTEGRATIONTEST-Test1")
 		self.assertEqual(got.api_key, "abc")
 		self.assertEqual(got.api_secret, "xyz")
+		self.assertIsNotNone(got.created_datetime)
+		self.assertIsNone(got.updated_datetime)
 
 	def test_update_wallet(self):
 		wallet = self._make_wallet(name="Before")
