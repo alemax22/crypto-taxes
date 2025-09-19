@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
 import logging
 import os
 import sys
@@ -16,6 +17,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wallets.portfolio import Portfolio
+from wallets.portfolio_factory import PortfolioFactory
+from wallets.portfolio_repository import PostgresPortfolioRepository
 from wallets.wallet_enums import WalletType, WalletSyncStatus
 from db import init_db, engine
 
@@ -26,11 +29,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global constants
+DEFAULT_USER_ID = "test"  # Default user ID for portfolio operations
+
+# Global portfolio instance
+portfolio_factory = PortfolioFactory()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan events."""
+    # Startup
+    try:
+        # Ensure database tables exist (safe if DB not used yet)
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+    yield
+    
+    # Shutdown (if needed)
+    logger.info("Application shutting down")
+
 # Create FastAPI app
 app = FastAPI(
     title="Crypto Taxes Portfolio API",
     description="API for managing cryptocurrency wallets and portfolios",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -62,26 +88,22 @@ class WalletResponse(BaseModel):
     reference_fiat: str
     sync_status: str
 
+
+class PortfolioCreateRequest(BaseModel):
+    reference_asset: str = Field(default="EUR", description="Reference asset for the portfolio (e.g., 'EUR', 'USD')")
+
+
+class PortfolioResponse(BaseModel):
+    portfolio_id: str
+    user_id: str
+    reference_asset: str
+    created_datetime: str
+    updated_datetime: str
+
 class ApiResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
-
-# Global portfolio instance
-portfolio = None
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the portfolio on startup."""
-    global portfolio
-    try:
-        # Ensure database tables exist (safe if DB not used yet)
-        init_db()
-        portfolio = Portfolio(reference_asset="EUR")
-        logger.info("Portfolio initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize portfolio: {e}")
-        raise
 
 @app.get("/", response_model=ApiResponse)
 async def root():
@@ -92,26 +114,33 @@ async def root():
         data={
             "version": "1.0.0",
             "endpoints": {
-                "list_wallets": "/wallets",
-                "add_wallet": "/wallets",
-                "get_wallet": "/wallets/{wallet_id}",
-                "remove_wallet": "/wallets/{wallet_id}",
-                "synchronize_wallets": "/wallets/synchronize"
+                "list_portfolios": "/portfolios",
+                "create_portfolio": "/portfolios",
+                "delete_portfolio": "/portfolios/{portfolio_id}",
+                "list_wallets": "/portfolios/{portfolio_id}/wallets",
+                "add_wallet": "/portfolios/{portfolio_id}/wallets",
+                "get_wallet": "/portfolios/{portfolio_id}/wallets/{wallet_id}",
+                "remove_wallet": "/portfolios/{portfolio_id}/wallets/{wallet_id}",
+                "synchronize_wallets": "/portfolios/{portfolio_id}/wallets/synchronize"
             }
         }
     )
 
-@app.get("/wallets", response_model=ApiResponse)
-async def list_wallets():
-    """List all wallets in the portfolio."""
+@app.get("/portfolios/{portfolio_id}/wallets", response_model=ApiResponse)
+async def list_wallets(portfolio_id: str):
+    """List all wallets in the specified portfolio."""
     try:
-        if not portfolio:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Portfolio not initialized"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
-        wallets = portfolio.list_wallets()
+        wallets = portfolio_instance.list_wallets()
         # Convert wallet objects to dictionaries
         wallet_dicts = []
         for wallet in wallets:
@@ -131,9 +160,11 @@ async def list_wallets():
         
         return ApiResponse(
             success=True,
-            message=f"Found {len(wallet_dicts)} wallets",
+            message=f"Found {len(wallet_dicts)} wallets in portfolio {portfolio_id}",
             data=wallet_dicts
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing wallets: {e}")
         raise HTTPException(
@@ -153,14 +184,18 @@ async def api_health():
         logger.error(f"Healthcheck DB error: {e}")
         return ApiResponse(success=False, message="db error", data={"error": str(e)})
 
-@app.post("/wallets", response_model=ApiResponse)
-async def add_wallet(wallet_request: WalletCreateRequest):
-    """Add a new wallet to the portfolio."""
+@app.post("/portfolios/{portfolio_id}/wallets", response_model=ApiResponse)
+async def add_wallet(portfolio_id: str, wallet_request: WalletCreateRequest):
+    """Add a new wallet to the specified portfolio."""
     try:
-        if not portfolio:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Portfolio not initialized"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
         logger.info(f"Wallet request: {wallet_request}")
@@ -178,7 +213,7 @@ async def add_wallet(wallet_request: WalletCreateRequest):
         if wallet_type_enum is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported wallet_type: {wt_str}")
 
-        wallet_id = portfolio.add_wallet(
+        wallet = portfolio_instance.add_wallet(
             wallet_type=wallet_type_enum,
             name=wallet_request.name,
             api_key=wallet_request.api_key,
@@ -186,13 +221,13 @@ async def add_wallet(wallet_request: WalletCreateRequest):
             description=wallet_request.description
         )
 
-        logger.info(f"Wallet ID: {wallet_id}")
+        logger.info(f"Wallet ID: {wallet.id if wallet else None}")
         
-        if wallet_id:
+        if wallet:
             return ApiResponse(
                 success=True,
-                message=f"Wallet '{wallet_request.name}' added successfully",
-                data={"wallet_id": wallet_id}
+                message=f"Wallet '{wallet_request.name}' added successfully to portfolio {portfolio_id}",
+                data={"wallet_id": wallet.id}
             )
         else:
             raise HTTPException(
@@ -208,22 +243,33 @@ async def add_wallet(wallet_request: WalletCreateRequest):
             detail=f"Failed to add wallet: {str(e)}"
         )
 
-@app.get("/wallets/{wallet_id}", response_model=ApiResponse)
-async def get_wallet(wallet_id: str):
+@app.get("/portfolios/{portfolio_id}/wallets/{wallet_id}", response_model=ApiResponse)
+async def get_wallet(portfolio_id: str, wallet_id: str):
     """
-    Get a specific wallet by ID.
+    Get a specific wallet by ID from the specified portfolio.
     It MUST not return sensitive data like api_key and api_secret.
     """
     try:
-        if not portfolio:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Portfolio not initialized"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
-        wallet = portfolio.get_wallet_by_id(wallet_id)
+        wallet = portfolio_instance.get_wallet_by_id(wallet_id)
 
         if wallet:
+            # Verify wallet belongs to the specified portfolio
+            if wallet.portfolio_id != portfolio_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Wallet with ID '{wallet_id}' not found in portfolio '{portfolio_id}'"
+                )
+            
             # Convert wallet object to dictionary and remove sensitive data
             wallet_dict = {
                 'wallet_id': wallet.id,
@@ -249,7 +295,7 @@ async def get_wallet(wallet_id: str):
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Wallet with ID '{wallet_id}' not found"
+                detail=f"Wallet with ID '{wallet_id}' not found in portfolio '{portfolio_id}'"
             )
     except HTTPException:
         raise
@@ -260,26 +306,38 @@ async def get_wallet(wallet_id: str):
             detail=f"Failed to get wallet: {str(e)}"
         )
 
-@app.delete("/wallets/{wallet_id}", response_model=ApiResponse)
-async def remove_wallet(wallet_id: str):
-    """Remove a wallet from the portfolio."""
+@app.delete("/portfolios/{portfolio_id}/wallets/{wallet_id}", response_model=ApiResponse)
+async def remove_wallet(portfolio_id: str, wallet_id: str):
+    """Remove a wallet from the specified portfolio."""
     try:
-        if not portfolio:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Portfolio not initialized"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
-        success = portfolio.remove_wallet(wallet_id)
+        # First verify the wallet exists and belongs to the portfolio
+        wallet = portfolio_instance.get_wallet_by_id(wallet_id)
+        if not wallet or wallet.portfolio_id != portfolio_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Wallet with ID '{wallet_id}' not found in portfolio '{portfolio_id}'"
+            )
+        
+        success = portfolio_instance.remove_wallet(wallet_id)
         if success:
             return ApiResponse(
                 success=True,
-                message=f"Wallet '{wallet_id}' removed successfully"
+                message=f"Wallet '{wallet_id}' removed successfully from portfolio '{portfolio_id}'"
             )
         else:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Wallet with ID '{wallet_id}' not found"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to remove wallet '{wallet_id}' from portfolio '{portfolio_id}'"
             )
     except HTTPException:
         raise
@@ -290,22 +348,28 @@ async def remove_wallet(wallet_id: str):
             detail=f"Failed to remove wallet: {str(e)}"
         )
 
-@app.post("/wallets/synchronize", response_model=ApiResponse)
-async def synchronize_wallets(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    """Synchronize all wallets in the portfolio."""
+@app.post("/portfolios/{portfolio_id}/wallets/synchronize", response_model=ApiResponse)
+async def synchronize_wallets(portfolio_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Synchronize all wallets in the specified portfolio."""
     try:
-        if not portfolio:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Portfolio not initialized"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
             )
         
-        results = portfolio.synchronize_all_wallets(start_date)
+        results = portfolio_instance.synchronize_all_wallets(start_date)
         return ApiResponse(
             success=True,
-            message="Synchronization completed",
+            message=f"Synchronization completed for portfolio '{portfolio_id}'",
             data=results
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error synchronizing wallets: {e}")
         raise HTTPException(
