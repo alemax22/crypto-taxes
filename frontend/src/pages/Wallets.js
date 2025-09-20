@@ -1,172 +1,151 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Button, Alert, Spinner, Modal, Form, Badge, Dropdown } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
+import LoadingSpinner from '../components/LoadingSpinner';
+import WalletCard from '../components/WalletCard';
+import AddWalletModal from '../components/AddWalletModal';
 
 const Wallets = () => {
   const [wallets, setWallets] = useState([]);
-  const [portfolios, setPortfolios] = useState([]);
-  const [selectedPortfolio, setSelectedPortfolio] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addingWallet, setAddingWallet] = useState(false);
-  const [sortBy, setSortBy] = useState('created_datetime');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('name');
+  const [filterBy, setFilterBy] = useState('all');
 
-  // Add wallet form state
-  const [newWallet, setNewWallet] = useState({
-    wallet_type: 'KrakenWallet',
-    name: '',
-    description: '',
-    api_key: '',
-    api_secret: '',
-    reference_fiat: 'EUR'
-  });
-
-  // Fetch portfolios on component mount
-  const fetchPortfolios = useCallback(async () => {
-    try {
-      const response = await axios.get('/portfolios');
-      if (response.data.success && response.data.portfolios.length > 0) {
-        setPortfolios(response.data.portfolios);
-        // Select first portfolio by default
-        const firstPortfolio = response.data.portfolios[0];
-        setSelectedPortfolio(firstPortfolio);
-        return firstPortfolio.portfolio_id;
-      }
-    } catch (err) {
-      console.error('Error fetching portfolios:', err);
-      setError('Failed to fetch portfolios');
-    }
-    return null;
+  useEffect(() => {
+    fetchWallets();
   }, []);
 
-  // Fetch wallets for selected portfolio
-  const fetchWallets = useCallback(async (portfolioId) => {
-    if (!portfolioId) return;
+  const fetchWallets = async () => {
+    setLoading(true);
+    setError(null);
     
     try {
-      setLoading(true);
-      const response = await axios.get(`/portfolios/${portfolioId}/wallets`);
+      const response = await axios.get('/api/wallets');
       if (response.data.success) {
         setWallets(response.data.wallets || []);
+      } else {
+        setError('Failed to fetch wallets');
       }
     } catch (err) {
       console.error('Error fetching wallets:', err);
-      setError('Failed to fetch wallets');
+      setError('Failed to connect to the server');
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  // Initialize data
-  useEffect(() => {
-    const initializeData = async () => {
-      const portfolioId = await fetchPortfolios();
-      if (portfolioId) {
-        await fetchWallets(portfolioId);
-      }
-    };
-    initializeData();
-  }, [fetchPortfolios, fetchWallets]);
-
-  // Sync all wallets
-  const handleSyncAll = async () => {
-    if (!selectedPortfolio) return;
-    
-    setSyncing(true);
-    setError(null);
-    
-    try {
-      const response = await axios.post(`/portfolios/${selectedPortfolio.portfolio_id}/wallets/synchronize`);
-      if (response.data.success) {
-        // Refresh wallet data after sync
-        await fetchWallets(selectedPortfolio.portfolio_id);
-      } else {
-        setError(response.data.error || 'Synchronization failed');
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to synchronize wallets');
-    } finally {
-      setSyncing(false);
-    }
   };
 
-  // Add new wallet
-  const handleAddWallet = async (e) => {
-    e.preventDefault();
-    if (!selectedPortfolio) return;
-
-    setAddingWallet(true);
-    setError(null);
-
+  const handleAddWallet = async (walletData) => {
     try {
-      const response = await axios.post(`/portfolios/${selectedPortfolio.portfolio_id}/wallets`, newWallet);
+      const response = await axios.post('/api/wallets', walletData);
       if (response.data.success) {
+        setWallets([...wallets, response.data.wallet]);
         setShowAddModal(false);
-        setNewWallet({
-          wallet_type: 'KrakenWallet',
-          name: '',
-          description: '',
-          api_key: '',
-          api_secret: '',
-          reference_fiat: 'EUR'
-        });
-        // Refresh wallet list
-        await fetchWallets(selectedPortfolio.portfolio_id);
+        return { success: true };
       } else {
-        setError(response.data.error || 'Failed to add wallet');
+        return { success: false, error: response.data.error || 'Failed to add wallet' };
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add wallet');
-    } finally {
-      setAddingWallet(false);
+      console.error('Error adding wallet:', err);
+      return { 
+        success: false, 
+        error: err.response?.data?.error || 'Failed to add wallet' 
+      };
     }
   };
 
-  // Delete wallet
   const handleDeleteWallet = async (walletId) => {
-    if (!selectedPortfolio || !window.confirm('Are you sure you want to delete this wallet?')) return;
+    if (!window.confirm('Are you sure you want to delete this wallet?')) {
+      return;
+    }
 
     try {
-      const response = await axios.delete(`/portfolios/${selectedPortfolio.portfolio_id}/wallets/${walletId}`);
+      const response = await axios.delete(`/api/wallets/${walletId}`);
       if (response.data.success) {
-        // Refresh wallet list
-        await fetchWallets(selectedPortfolio.portfolio_id);
+        setWallets(wallets.filter(w => w.id !== walletId));
       } else {
-        setError(response.data.error || 'Failed to delete wallet');
+        alert('Failed to delete wallet');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to delete wallet');
+      console.error('Error deleting wallet:', err);
+      alert('Failed to delete wallet');
     }
   };
 
-  // Get status badge
-  const getStatusBadge = (wallet) => {
-    const syncStatus = wallet.sync_status || 'NOT_SYNCHRONIZED';
-    const updatedTime = wallet.updated_datetime;
-    
-    if (syncStatus === 'COMPLETED' && updatedTime) {
-      const lastSync = new Date(updatedTime);
-      const now = new Date();
-      const diffHours = (now - lastSync) / (1000 * 60 * 60);
-      
-      if (diffHours < 24) {
-        return <Badge bg="success">SYNCED</Badge>;
+  const handleSyncWallet = async (walletId) => {
+    try {
+      const response = await axios.post(`/api/wallets/${walletId}/sync`);
+      if (response.data.success) {
+        // Update the wallet in the list
+        setWallets(wallets.map(w => 
+          w.id === walletId 
+            ? { ...w, last_sync: new Date().toISOString(), is_syncing: true }
+            : w
+        ));
       } else {
-        return <Badge bg="warning">⚠ {Math.floor(diffHours / 24)} days ago</Badge>;
+        alert('Failed to sync wallet');
       }
-    } else if (syncStatus === 'IN_PROGRESS') {
-      return <Badge bg="info">SYNCING...</Badge>;
-    } else if (syncStatus === 'FAILED') {
-      return <Badge bg="danger">SYNC FAILED</Badge>;
-    } else {
-      return <Badge bg="secondary">NOT SYNCHRONIZED</Badge>;
+    } catch (err) {
+      console.error('Error syncing wallet:', err);
+      alert('Failed to sync wallet');
     }
   };
 
-  // Format currency
+  const getFilteredAndSortedWallets = () => {
+    let filtered = wallets;
+
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(wallet =>
+        wallet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        wallet.type.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (filterBy !== 'all') {
+      filtered = filtered.filter(wallet => {
+        switch (filterBy) {
+          case 'active':
+            return wallet.is_active;
+          case 'inactive':
+            return !wallet.is_active;
+          case 'synced':
+            return wallet.last_sync;
+          case 'unsynced':
+            return !wallet.last_sync;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.name.localeCompare(b.name);
+        case 'type':
+          return a.type.localeCompare(b.type);
+        case 'balance':
+          return (b.balance || 0) - (a.balance || 0);
+        case 'last_sync':
+          return new Date(b.last_sync || 0) - new Date(a.last_sync || 0);
+        case 'created':
+        default:
+          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }
+    });
+
+    return filtered;
+  };
+
+  const getTotalBalance = () => {
+    return wallets.reduce((sum, wallet) => sum + (wallet.balance || 0), 0);
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-EU', {
       style: 'currency',
@@ -174,306 +153,381 @@ const Wallets = () => {
     }).format(amount || 0);
   };
 
-  // Get wallet icon
-  const getWalletIcon = (walletType) => {
-    if (walletType === 'KrakenWallet') {
-      return '🐙'; // Kraken emoji
-    }
-    return '💼'; // Default wallet emoji
-  };
+  const filteredWallets = getFilteredAndSortedWallets();
 
-  // Filter and sort wallets
-  const filteredAndSortedWallets = [...wallets]
-    .filter(wallet => 
-      wallet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (wallet.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      wallet.wallet_type.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'created_datetime':
-          return new Date(b.created_datetime) - new Date(a.created_datetime);
-        case 'updated_datetime':
-          return new Date(b.updated_datetime || 0) - new Date(a.updated_datetime || 0);
-        default:
-          return 0;
-      }
-    });
+  if (loading) {
+    return (
+      <div className="wallets-loading">
+        <LoadingSpinner size="lg" />
+        <p className="text-secondary mt-4">Loading your wallets...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="wallets-page">
+    <div className="wallets-page fade-in">
       {/* Header */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="d-flex align-items-center">
-          <h1 className="me-3">Wallets</h1>
-          <Badge bg="secondary" className="fs-6">{wallets.length}</Badge>
-        </div>
-        <div className="d-flex gap-3">
-          <Button 
-            variant="outline-primary" 
-            onClick={handleSyncAll}
-            disabled={syncing || wallets.length === 0}
-            className="d-flex align-items-center"
-          >
-            {syncing ? (
-              <>
-                <Spinner animation="border" size="sm" className="me-2" />
-                Sync all
-              </>
-            ) : (
-              <>
-                <i className="bi bi-arrow-clockwise me-2"></i>
-                Sync all
-              </>
-            )}
-          </Button>
-          <Button 
-            variant="primary" 
+      <div className="wallets-header mb-8">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="mb-2">Wallets & Exchanges</h1>
+            <p className="text-secondary">
+              Manage your connected wallets and track their performance
+            </p>
+          </div>
+          <button 
+            className="btn btn-primary"
             onClick={() => setShowAddModal(true)}
-            className="d-flex align-items-center"
           >
-            <span className="me-2">+</span>
-            Add wallet / exchange
-          </Button>
+            <span className="btn-icon">➕</span>
+            Add Wallet
+          </button>
+        </div>
+
+        {/* Stats Summary */}
+        <div className="wallets-stats grid grid-cols-4 gap-4 mb-6">
+          <div className="stat-item">
+            <div className="stat-value">{wallets.length}</div>
+            <div className="stat-label">Total Wallets</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-value">{wallets.filter(w => w.is_active).length}</div>
+            <div className="stat-label">Active</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-value">{formatCurrency(getTotalBalance())}</div>
+            <div className="stat-label">Total Balance</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-value">{wallets.filter(w => w.last_sync).length}</div>
+            <div className="stat-label">Synchronized</div>
+          </div>
         </div>
       </div>
 
-      {/* Search and Sort */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="search-container position-relative">
-          <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-          <Form.Control
-            type="text"
-            placeholder="Find wallet..."
-            className="search-input ps-5"
-            style={{ width: '300px' }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* Filters and Search */}
+      <div className="wallets-filters mb-6">
+        <div className="filters-row">
+          {/* Search */}
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Search wallets..."
+                className="input search-input"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="filter-controls">
+            <select
+              className="input filter-select"
+              value={filterBy}
+              onChange={(e) => setFilterBy(e.target.value)}
+            >
+              <option value="all">All Wallets</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+              <option value="synced">Synchronized</option>
+              <option value="unsynced">Not Synchronized</option>
+            </select>
+
+            <select
+              className="input filter-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="created">Newest First</option>
+              <option value="name">Name A-Z</option>
+              <option value="type">Type</option>
+              <option value="balance">Balance High-Low</option>
+              <option value="last_sync">Recently Synced</option>
+            </select>
+          </div>
         </div>
-        <Dropdown>
-          <Dropdown.Toggle variant="outline-secondary" id="sort-dropdown" className="d-flex align-items-center">
-            <i className="bi bi-clock-history me-2"></i>
-            Sort by {sortBy === 'name' ? 'Name' : sortBy === 'updated_datetime' ? 'Last Sync' : 'Date Added'}
-          </Dropdown.Toggle>
-          <Dropdown.Menu>
-            <Dropdown.Item onClick={() => setSortBy('created_datetime')}>
-              <i className="bi bi-calendar-plus me-2"></i>
-              Date Added
-            </Dropdown.Item>
-            <Dropdown.Item onClick={() => setSortBy('updated_datetime')}>
-              <i className="bi bi-arrow-clockwise me-2"></i>
-              Last Sync
-            </Dropdown.Item>
-            <Dropdown.Item onClick={() => setSortBy('name')}>
-              <i className="bi bi-sort-alpha-down me-2"></i>
-              Name
-            </Dropdown.Item>
-          </Dropdown.Menu>
-        </Dropdown>
       </div>
 
-      {/* Error Alert */}
+      {/* Error Display */}
       {error && (
-        <Alert variant="danger" className="mb-4" dismissible onClose={() => setError(null)}>
-          {error}
-        </Alert>
+        <div className="error-banner mb-6">
+          <div className="error-content">
+            <span className="error-icon">⚠️</span>
+            <span className="error-message">{error}</span>
+            <button 
+              className="btn btn-sm btn-outline"
+              onClick={fetchWallets}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Wallets List */}
-      {loading ? (
-        <div className="text-center py-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </Spinner>
-        </div>
-      ) : (
-        <div className="wallets-grid">
-          {filteredAndSortedWallets.map((wallet) => (
-            <Card key={wallet.wallet_id} className="wallet-card">
-              <Card.Body className="d-flex justify-content-between align-items-center">
-                <div className="d-flex align-items-center">
-                  <div className="wallet-icon me-3">
-                    {getWalletIcon(wallet.wallet_type)}
-                  </div>
-                  <div>
-                    <h5 className="mb-1">{wallet.name}</h5>
-                    <div className="d-flex align-items-center mb-2">
-                      {getStatusBadge(wallet)}
-                      {wallet.updated_datetime && (
-                        <small className="text-muted ms-2">
-                          {new Date(wallet.updated_datetime).toLocaleDateString()}
-                        </small>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="text-end">
-                  <div className="wallet-value mb-2">
-                    <div className="value-amount">{formatCurrency(0)}</div>
-                    <div className="value-label">Total value</div>
-                  </div>
-                  <Dropdown>
-                    <Dropdown.Toggle variant="link" className="text-muted p-0 border-0 bg-transparent">
-                      <i className="bi bi-three-dots-vertical"></i>
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu align="end">
-                      <Dropdown.Item onClick={() => handleSyncAll()}>
-                        <i className="bi bi-arrow-clockwise me-2"></i>
-                        Sync wallet
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => {}}>
-                        <i className="bi bi-eye me-2"></i>
-                        View details
-                      </Dropdown.Item>
-                      <Dropdown.Divider />
-                      <Dropdown.Item 
-                        className="text-danger" 
-                        onClick={() => handleDeleteWallet(wallet.wallet_id)}
-                      >
-                        <i className="bi bi-trash me-2"></i>
-                        Delete wallet
-                      </Dropdown.Item>
-                    </Dropdown.Menu>
-                  </Dropdown>
-                </div>
-              </Card.Body>
-              
-              <div className="wallet-details">
-                <div className="d-flex justify-content-between text-muted small">
-                  <span>0 transactions</span>
-                  <span>
-                    {wallet.created_datetime ? 
-                      `${Math.floor((new Date() - new Date(wallet.created_datetime)) / (1000 * 60 * 60 * 24))} days ago` : 
-                      'Unknown'
-                    }
-                  </span>
-                </div>
+      {/* Wallets Grid */}
+      <div className="wallets-grid">
+        {filteredWallets.length > 0 ? (
+          <div className="grid grid-cols-2 gap-6">
+            {filteredWallets.map((wallet, index) => (
+              <WalletCard
+                key={wallet.id}
+                wallet={wallet}
+                onDelete={() => handleDeleteWallet(wallet.id)}
+                onSync={() => handleSyncWallet(wallet.id)}
+                className="slide-in-left"
+                style={{ animationDelay: `${index * 0.1}s` }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            {searchTerm || filterBy !== 'all' ? (
+              <div className="empty-content">
+                <div className="empty-icon">🔍</div>
+                <h3>No wallets match your filters</h3>
+                <p className="text-secondary mb-4">
+                  Try adjusting your search or filter criteria
+                </p>
+                <button 
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterBy('all');
+                  }}
+                >
+                  Clear Filters
+                </button>
               </div>
-            </Card>
-          ))}
-          
-          {filteredAndSortedWallets.length === 0 && wallets.length > 0 && (
-            <div className="text-center py-5">
-              <h5>No wallets match your search</h5>
-              <p className="text-muted">Try adjusting your search terms</p>
-            </div>
-          )}
-          
-          {wallets.length === 0 && (
-            <div className="text-center py-5">
-              <h5>No wallets found</h5>
-              <p className="text-muted">Add your first wallet to get started</p>
-              <Button variant="primary" onClick={() => setShowAddModal(true)}>
-                Add wallet / exchange
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+            ) : (
+              <div className="empty-content">
+                <div className="empty-icon">💼</div>
+                <h3>No wallets connected yet</h3>
+                <p className="text-secondary mb-4">
+                  Connect your first wallet or exchange to start tracking your portfolio
+                </p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => setShowAddModal(true)}
+                >
+                  <span className="btn-icon">➕</span>
+                  Add Your First Wallet
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Add Wallet Modal */}
-      <Modal show={showAddModal} onHide={() => setShowAddModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Add wallet / exchange</Modal.Title>
-        </Modal.Header>
-        <Form onSubmit={handleAddWallet}>
-          <Modal.Body>
-            <Form.Group className="mb-3">
-              <Form.Label>Exchange Type</Form.Label>
-              <Form.Select
-                value={newWallet.wallet_type}
-                onChange={(e) => setNewWallet({...newWallet, wallet_type: e.target.value})}
-                required
-              >
-                <option value="KrakenWallet">Kraken</option>
-              </Form.Select>
-            </Form.Group>
+      <AddWalletModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddWallet}
+      />
 
-            <Form.Group className="mb-3">
-              <Form.Label>Wallet Name</Form.Label>
-              <Form.Control
-                type="text"
-                value={newWallet.name}
-                onChange={(e) => setNewWallet({...newWallet, name: e.target.value})}
-                placeholder="e.g., My Kraken Account"
-                required
-              />
-            </Form.Group>
+      <style jsx>{`
+        .wallets-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          min-height: 400px;
+        }
 
-            <Form.Group className="mb-3">
-              <Form.Label>Description (Optional)</Form.Label>
-              <Form.Control
-                type="text"
-                value={newWallet.description}
-                onChange={(e) => setNewWallet({...newWallet, description: e.target.value})}
-                placeholder="Optional description"
-              />
-            </Form.Group>
+        .wallets-header {
+          border-bottom: 1px solid var(--dark-border);
+          padding-bottom: 2rem;
+        }
 
-            <Form.Group className="mb-3">
-              <Form.Label>API Key</Form.Label>
-              <Form.Control
-                type="text"
-                value={newWallet.api_key}
-                onChange={(e) => setNewWallet({...newWallet, api_key: e.target.value})}
-                placeholder="Enter your API key"
-                required
-              />
-            </Form.Group>
+        .btn-icon {
+          margin-right: 0.5rem;
+        }
 
-            <Form.Group className="mb-3">
-              <Form.Label>API Secret</Form.Label>
-              <Form.Control
-                type="password"
-                value={newWallet.api_secret}
-                onChange={(e) => setNewWallet({...newWallet, api_secret: e.target.value})}
-                placeholder="Enter your API secret"
-                required
-              />
-            </Form.Group>
+        .wallets-stats {
+          background: var(--gradient-surface);
+          border: 1px solid var(--dark-border);
+          border-radius: var(--border-radius-lg);
+          padding: 1.5rem;
+        }
 
-            <Form.Group className="mb-3">
-              <Form.Label>Reference Currency</Form.Label>
-              <Form.Select
-                value={newWallet.reference_fiat}
-                onChange={(e) => setNewWallet({...newWallet, reference_fiat: e.target.value})}
-                required
-              >
-                <option value="EUR">EUR</option>
-                <option value="USD">USD</option>
-                <option value="GBP">GBP</option>
-              </Form.Select>
-            </Form.Group>
+        .stat-item {
+          text-align: center;
+          padding: 1rem;
+          border-radius: var(--border-radius);
+          background: rgba(59, 130, 246, 0.05);
+          transition: var(--transition);
+        }
 
-            <Alert variant="info">
-              <strong>Required Permissions:</strong> Your API key needs Query Funds, Query Open Orders & Trades, and Query Ledgers permissions.
-            </Alert>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowAddModal(false)}>
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              variant="primary" 
-              disabled={addingWallet}
-            >
-              {addingWallet ? (
-                <>
-                  <Spinner animation="border" size="sm" className="me-2" />
-                  Adding...
-                </>
-              ) : (
-                'Add Wallet'
-              )}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
+        .stat-item:hover {
+          background: rgba(59, 130, 246, 0.1);
+          transform: translateY(-2px);
+        }
+
+        .stat-value {
+          font-size: 1.75rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+          font-size: 0.875rem;
+          color: var(--text-muted);
+        }
+
+        .wallets-filters {
+          background: var(--dark-surface);
+          border: 1px solid var(--dark-border);
+          border-radius: var(--border-radius);
+          padding: 1.5rem;
+        }
+
+        .filters-row {
+          display: flex;
+          gap: 1.5rem;
+          align-items: center;
+        }
+
+        .search-container {
+          flex: 1;
+        }
+
+        .search-input-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .search-icon {
+          position: absolute;
+          left: 1rem;
+          color: var(--text-muted);
+          z-index: 1;
+        }
+
+        .search-input {
+          padding-left: 2.5rem;
+          width: 100%;
+        }
+
+        .filter-controls {
+          display: flex;
+          gap: 1rem;
+        }
+
+        .filter-select {
+          min-width: 150px;
+        }
+
+        .error-banner {
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid var(--error);
+          border-radius: var(--border-radius);
+          padding: 1rem;
+        }
+
+        .error-content {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .error-icon {
+          font-size: 1.25rem;
+        }
+
+        .error-message {
+          flex: 1;
+          color: var(--error);
+          font-weight: 500;
+        }
+
+        .wallets-grid {
+          min-height: 400px;
+        }
+
+        .empty-state {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 400px;
+        }
+
+        .empty-content {
+          text-align: center;
+          max-width: 400px;
+        }
+
+        .empty-icon {
+          font-size: 4rem;
+          margin-bottom: 1.5rem;
+          opacity: 0.6;
+        }
+
+        .empty-content h3 {
+          margin-bottom: 1rem;
+          color: var(--text-primary);
+        }
+
+        @media (max-width: 1024px) {
+          .grid-cols-4 {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          
+          .grid-cols-2 {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .wallets-header .flex {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .wallets-stats {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          
+          .filters-row {
+            flex-direction: column;
+            gap: 1rem;
+          }
+          
+          .search-container,
+          .filter-controls {
+            width: 100%;
+          }
+          
+          .filter-controls {
+            flex-direction: column;
+          }
+          
+          .filter-select {
+            min-width: auto;
+          }
+          
+          .error-content {
+            flex-direction: column;
+            text-align: center;
+            gap: 0.75rem;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .wallets-stats {
+            grid-template-columns: 1fr;
+          }
+          
+          .stat-value {
+            font-size: 1.5rem;
+          }
+        }
+      `}</style>
     </div>
   );
 };
