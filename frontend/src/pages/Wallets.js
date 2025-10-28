@@ -23,11 +23,18 @@ const Wallets = () => {
     setError(null);
     
     try {
-      const response = await axios.get('/api/wallets');
-      if (response.data.success) {
-        setWallets(response.data.wallets || []);
+      // First get portfolios, then get wallets for the first portfolio
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const walletsResponse = await axios.get(`/portfolios/${portfolio.portfolio_id}/wallets`);
+        if (walletsResponse.data.success) {
+          setWallets(walletsResponse.data.data || []);
+        } else {
+          setError('Failed to fetch wallets');
+        }
       } else {
-        setError('Failed to fetch wallets');
+        setError('No portfolio found');
       }
     } catch (err) {
       console.error('Error fetching wallets:', err);
@@ -39,19 +46,27 @@ const Wallets = () => {
 
   const handleAddWallet = async (walletData) => {
     try {
-      const response = await axios.post('/api/wallets', walletData);
-      if (response.data.success) {
-        setWallets([...wallets, response.data.wallet]);
-        setShowAddModal(false);
-        return { success: true };
+      // First get portfolio, then add wallet to it
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const response = await axios.post(`/portfolios/${portfolio.portfolio_id}/wallets`, walletData);
+        if (response.data.success) {
+          // Refresh wallets list
+          fetchWallets();
+          setShowAddModal(false);
+          return { success: true };
+        } else {
+          return { success: false, error: response.data.message || 'Failed to add wallet' };
+        }
       } else {
-        return { success: false, error: response.data.error || 'Failed to add wallet' };
+        return { success: false, error: 'No portfolio found' };
       }
     } catch (err) {
       console.error('Error adding wallet:', err);
       return { 
         success: false, 
-        error: err.response?.data?.error || 'Failed to add wallet' 
+        error: err.response?.data?.detail || 'Failed to add wallet' 
       };
     }
   };
@@ -62,11 +77,18 @@ const Wallets = () => {
     }
 
     try {
-      const response = await axios.delete(`/api/wallets/${walletId}`);
-      if (response.data.success) {
-        setWallets(wallets.filter(w => w.id !== walletId));
+      // First get portfolio, then delete wallet from it
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const response = await axios.delete(`/portfolios/${portfolio.portfolio_id}/wallets/${walletId}`);
+        if (response.data.success) {
+          setWallets(wallets.filter(w => w.wallet_id !== walletId));
+        } else {
+          alert('Failed to delete wallet');
+        }
       } else {
-        alert('Failed to delete wallet');
+        alert('No portfolio found');
       }
     } catch (err) {
       console.error('Error deleting wallet:', err);
@@ -76,16 +98,19 @@ const Wallets = () => {
 
   const handleSyncWallet = async (walletId) => {
     try {
-      const response = await axios.post(`/api/wallets/${walletId}/sync`);
-      if (response.data.success) {
-        // Update the wallet in the list
-        setWallets(wallets.map(w => 
-          w.id === walletId 
-            ? { ...w, last_sync: new Date().toISOString(), is_syncing: true }
-            : w
-        ));
+      // First get portfolio, then sync wallets
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const response = await axios.post(`/portfolios/${portfolio.portfolio_id}/wallets/synchronize`);
+        if (response.data.success) {
+          // Refresh wallets list to get updated sync status
+          fetchWallets();
+        } else {
+          alert('Failed to sync wallets');
+        }
       } else {
-        alert('Failed to sync wallet');
+        alert('No portfolio found');
       }
     } catch (err) {
       console.error('Error syncing wallet:', err);
@@ -100,7 +125,7 @@ const Wallets = () => {
     if (searchTerm) {
       filtered = filtered.filter(wallet =>
         wallet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        wallet.type.toLowerCase().includes(searchTerm.toLowerCase())
+        wallet.wallet_type.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -128,14 +153,14 @@ const Wallets = () => {
         case 'name':
           return a.name.localeCompare(b.name);
         case 'type':
-          return a.type.localeCompare(b.type);
+          return a.wallet_type.localeCompare(b.wallet_type);
         case 'balance':
           return (b.balance || 0) - (a.balance || 0);
         case 'last_sync':
-          return new Date(b.last_sync || 0) - new Date(a.last_sync || 0);
+          return new Date(b.updated_datetime || 0) - new Date(a.updated_datetime || 0);
         case 'created':
         default:
-          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+          return new Date(b.created_datetime || 0) - new Date(a.created_datetime || 0);
       }
     });
 
@@ -199,7 +224,7 @@ const Wallets = () => {
             <div className="stat-label">Total Balance</div>
           </div>
           <div className="stat-item">
-            <div className="stat-value">{wallets.filter(w => w.last_sync).length}</div>
+            <div className="stat-value">{wallets.filter(w => w.sync_status === 'SYNCHRONIZED').length}</div>
             <div className="stat-label">Synchronized</div>
           </div>
         </div>

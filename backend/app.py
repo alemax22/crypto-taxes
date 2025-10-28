@@ -121,7 +121,9 @@ async def root():
                 "add_wallet": "/portfolios/{portfolio_id}/wallets",
                 "get_wallet": "/portfolios/{portfolio_id}/wallets/{wallet_id}",
                 "remove_wallet": "/portfolios/{portfolio_id}/wallets/{wallet_id}",
-                "synchronize_wallets": "/portfolios/{portfolio_id}/wallets/synchronize"
+                "synchronize_wallets": "/portfolios/{portfolio_id}/wallets/synchronize",
+                "get_wallet_transactions": "/portfolios/{portfolio_id}/wallets/{wallet_id}/transactions",
+                "get_wallet_balance": "/portfolios/{portfolio_id}/wallets/{wallet_id}/balance"
             }
         }
     )
@@ -585,6 +587,151 @@ async def synchronize_wallets(portfolio_id: str, start_date: Optional[str] = Non
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to synchronize wallets: {str(e)}"
+        )
+
+@app.get("/portfolios/{portfolio_id}/wallets/{wallet_id}/transactions", response_model=ApiResponse)
+async def get_wallet_transactions(portfolio_id: str, wallet_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """
+    Get transactions for a specific wallet within a predefined time interval.
+    
+    Args:
+        portfolio_id: Portfolio ID
+        wallet_id: Wallet ID
+        start_date: Start date for transactions (YYYY-MM-DD format, optional)
+        end_date: End date for transactions (YYYY-MM-DD format, optional)
+    """
+    try:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
+            )
+        
+        # Get wallet from portfolio
+        wallet = portfolio_instance.get_wallet_by_id(wallet_id)
+        if not wallet or wallet.portfolio_id != portfolio_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Wallet with ID '{wallet_id}' not found in portfolio '{portfolio_id}'"
+            )
+        
+        # Get transactions with date filtering
+        transactions_df = wallet.get_transactions(start_date=start_date, end_date=end_date)
+        
+        # Convert DataFrame to list of dictionaries
+        if transactions_df.empty:
+            transactions_list = []
+        else:
+            # Convert datetime to string for JSON serialization
+            transactions_df_copy = transactions_df.copy()
+            transactions_df_copy['datetime'] = transactions_df_copy['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            # Convert Decimal columns to float for JSON serialization
+            transactions_df_copy['amount'] = transactions_df_copy['amount'].astype(float)
+            transactions_df_copy['fee'] = transactions_df_copy['fee'].astype(float)
+            transactions_df_copy['asset_price_in_reference_fiat'] = transactions_df_copy['asset_price_in_reference_fiat'].astype(float)
+            transactions_list = transactions_df_copy.to_dict('records')
+        
+        return ApiResponse(
+            success=True,
+            message=f"Retrieved {len(transactions_list)} transactions for wallet '{wallet_id}'",
+            data={
+                "wallet_id": wallet_id,
+                "total_transactions": len(transactions_list),
+                "start_date": start_date,
+                "end_date": end_date,
+                "transactions": transactions_list
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting wallet transactions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get wallet transactions: {str(e)}"
+        )
+
+@app.get("/portfolios/{portfolio_id}/wallets/{wallet_id}/balance", response_model=ApiResponse)
+async def get_wallet_balance(portfolio_id: str, wallet_id: str):
+    """
+    Get the current balance for a specific wallet.
+    
+    Args:
+        portfolio_id: Portfolio ID
+        wallet_id: Wallet ID
+    """
+    try:
+        # Get portfolio from repository
+        portfolio_repo = PostgresPortfolioRepository()
+        portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
+        
+        if not portfolio_instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Portfolio with ID '{portfolio_id}' not found"
+            )
+        
+        # Verify portfolio belongs to the current user
+        if portfolio_instance.user_id != DEFAULT_USER_ID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Portfolio '{portfolio_id}' does not belong to the current user"
+            )
+        
+        # Get wallet from portfolio
+        wallet = portfolio_instance.get_wallet_by_id(wallet_id)
+        if not wallet or wallet.portfolio_id != portfolio_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Wallet with ID '{wallet_id}' not found in portfolio '{portfolio_id}'"
+            )
+        
+        # Get wallet balance
+        balance_df = wallet.get_balance()
+        
+        # Convert DataFrame to list of dictionaries
+        if balance_df.empty:
+            balance_list = []
+            total_balance_in_fiat = 0.0
+        else:
+            # Convert Decimal columns to float for JSON serialization
+            balance_df_copy = balance_df.copy()
+            balance_df_copy['balance'] = balance_df_copy['balance'].astype(float)
+            balance_df_copy['balance_in_reference_fiat'] = balance_df_copy['balance_in_reference_fiat'].astype(float)
+            balance_df_copy['asset_price_in_reference_fiat'] = balance_df_copy['asset_price_in_reference_fiat'].astype(float)
+            balance_df_copy['timestamp'] = balance_df_copy['timestamp'].astype(int)
+            balance_list = balance_df_copy.to_dict('records')
+            total_balance_in_fiat = sum(item['balance_in_reference_fiat'] for item in balance_list)
+        
+        return ApiResponse(
+            success=True,
+            message=f"Retrieved balance for wallet '{wallet_id}'",
+            data={
+                "wallet_id": wallet_id,
+                "total_assets": len(balance_list),
+                "total_balance_in_reference_fiat": round(total_balance_in_fiat, 2),
+                "reference_fiat": wallet.reference_fiat,
+                "balances": balance_list
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting wallet balance: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get wallet balance: {str(e)}"
         )
 
 if __name__ == "__main__":

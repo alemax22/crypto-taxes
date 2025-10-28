@@ -4,7 +4,7 @@ import LoadingSpinner from './LoadingSpinner';
 const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
   const [formData, setFormData] = useState({
     name: '',
-    type: 'kraken',
+    wallet_type: 'Kraken',
     api_key: '',
     api_secret: '',
     description: ''
@@ -15,14 +15,14 @@ const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
 
   const walletTypes = [
     {
-      id: 'kraken',
+      id: 'Kraken',
       name: 'Kraken',
       icon: '🐙',
       description: 'Connect your Kraken exchange account',
       features: ['Spot Trading', 'Futures', 'Staking', 'DeFi']
     },
     {
-      id: 'binance',
+      id: 'Binance',
       name: 'Binance',
       icon: '🟡',
       description: 'Connect your Binance exchange account',
@@ -30,7 +30,7 @@ const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
       disabled: true
     },
     {
-      id: 'coinbase',
+      id: 'Coinbase',
       name: 'Coinbase Pro',
       icon: '🔵',
       description: 'Connect your Coinbase Pro account',
@@ -66,7 +66,7 @@ const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
   const handleClose = () => {
     setFormData({
       name: '',
-      type: 'kraken',
+      wallet_type: 'Kraken',
       api_key: '',
       api_secret: '',
       description: ''
@@ -77,14 +77,14 @@ const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
   };
 
   const validateStep1 = () => {
-    return formData.type && formData.name.trim();
+    return formData.wallet_type && formData.name.trim();
   };
 
   const validateStep2 = () => {
     return formData.api_key.trim() && formData.api_secret.trim();
   };
 
-  const selectedWalletType = walletTypes.find(w => w.id === formData.type);
+  const selectedWalletType = walletTypes.find(w => w.id === formData.wallet_type);
 
   if (!isOpen) return null;
 
@@ -130,9 +130,9 @@ const AddWalletModal = ({ isOpen, onClose, onAdd }) => {
                     <div
                       key={walletType.id}
                       className={`wallet-type-card ${
-                        formData.type === walletType.id ? 'selected' : ''
+                        formData.wallet_type === walletType.id ? 'selected' : ''
                       } ${walletType.disabled ? 'disabled' : ''}`}
-                      onClick={() => !walletType.disabled && handleInputChange('type', walletType.id)}
+                      onClick={() => !walletType.disabled && handleInputChange('wallet_type', walletType.id)}
                     >
                       <div className="wallet-type-header">
                         <div className="wallet-type-icon">{walletType.icon}</div>

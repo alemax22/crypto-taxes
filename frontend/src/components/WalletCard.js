@@ -20,11 +20,11 @@ const WalletCard = ({ wallet, onDelete, onSync, className = '', style = {} }) =>
       return { status: 'inactive', label: 'Inactive', color: 'var(--text-muted)' };
     }
     
-    if (!wallet.last_sync) {
+    if (wallet.sync_status === 'NOT_SYNCHRONIZED') {
       return { status: 'unsynced', label: 'Not Synced', color: 'var(--warning)' };
     }
     
-    const lastSync = new Date(wallet.last_sync);
+    const lastSync = new Date(wallet.updated_datetime);
     const now = new Date();
     const diffHours = (now - lastSync) / (1000 * 60 * 60);
     
@@ -39,7 +39,7 @@ const WalletCard = ({ wallet, onDelete, onSync, className = '', style = {} }) =>
   };
 
   const getWalletIcon = () => {
-    switch (wallet.type?.toLowerCase()) {
+    switch (wallet.wallet_type?.toLowerCase()) {
       case 'kraken':
         return '🐙';
       case 'binance':
@@ -58,9 +58,9 @@ const WalletCard = ({ wallet, onDelete, onSync, className = '', style = {} }) =>
   };
 
   const formatLastSync = () => {
-    if (!wallet.last_sync) return 'Never';
+    if (!wallet.updated_datetime) return 'Never';
     
-    const date = new Date(wallet.last_sync);
+    const date = new Date(wallet.updated_datetime);
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
@@ -88,7 +88,7 @@ const WalletCard = ({ wallet, onDelete, onSync, className = '', style = {} }) =>
             <div className="wallet-details">
               <h3 className="wallet-name">{wallet.name}</h3>
               <div className="wallet-meta">
-                <span className="wallet-type">{wallet.type}</span>
+                <span className="wallet-type">{wallet.wallet_type}</span>
                 <span className="wallet-separator">•</span>
                 <span 
                   className="wallet-status"
@@ -177,7 +177,7 @@ const WalletCard = ({ wallet, onDelete, onSync, className = '', style = {} }) =>
       {/* Footer */}
       <div className="card-footer">
         <Link 
-          to={`/wallets/${wallet.id}`}
+          to={`/wallets/${wallet.wallet_id}`}
           className="btn btn-outline btn-sm wallet-view-btn"
         >
           View Details

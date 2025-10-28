@@ -24,20 +24,28 @@ const WalletDetails = () => {
     setError(null);
     
     try {
-      const [walletResponse, transactionsResponse] = await Promise.all([
-        axios.get(`/api/wallets/${walletId}`),
-        axios.get(`/api/wallets/${walletId}/transactions`)
-      ]);
+      // First get portfolio, then get wallet and transactions
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        
+        const [walletResponse, transactionsResponse] = await Promise.all([
+          axios.get(`/portfolios/${portfolio.portfolio_id}/wallets/${walletId}`),
+          axios.get(`/portfolios/${portfolio.portfolio_id}/wallets/${walletId}/transactions`)
+        ]);
 
-      if (walletResponse.data.success) {
-        setWallet(walletResponse.data.wallet);
+        if (walletResponse.data.success) {
+          setWallet(walletResponse.data.data);
+        } else {
+          setError('Wallet not found');
+          return;
+        }
+
+        if (transactionsResponse.data.success) {
+          setTransactions(transactionsResponse.data.data.transactions || []);
+        }
       } else {
-        setError('Wallet not found');
-        return;
-      }
-
-      if (transactionsResponse.data.success) {
-        setTransactions(transactionsResponse.data.transactions || []);
+        setError('No portfolio found');
       }
     } catch (err) {
       console.error('Error fetching wallet details:', err);
@@ -54,12 +62,19 @@ const WalletDetails = () => {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const response = await axios.post(`/api/wallets/${walletId}/sync`);
-      if (response.data.success) {
-        // Refresh data after sync
-        await fetchWalletDetails();
+      // First get portfolio, then sync wallets
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const response = await axios.post(`/portfolios/${portfolio.portfolio_id}/wallets/synchronize`);
+        if (response.data.success) {
+          // Refresh data after sync
+          await fetchWalletDetails();
+        } else {
+          alert('Failed to sync wallet');
+        }
       } else {
-        alert('Failed to sync wallet');
+        alert('No portfolio found');
       }
     } catch (err) {
       console.error('Error syncing wallet:', err);
@@ -75,11 +90,18 @@ const WalletDetails = () => {
     }
 
     try {
-      const response = await axios.delete(`/api/wallets/${walletId}`);
-      if (response.data.success) {
-        navigate('/wallets');
+      // First get portfolio, then delete wallet
+      const portfoliosResponse = await axios.get('/portfolios');
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0];
+        const response = await axios.delete(`/portfolios/${portfolio.portfolio_id}/wallets/${walletId}`);
+        if (response.data.success) {
+          navigate('/wallets');
+        } else {
+          alert('Failed to delete wallet');
+        }
       } else {
-        alert('Failed to delete wallet');
+        alert('No portfolio found');
       }
     } catch (err) {
       console.error('Error deleting wallet:', err);
@@ -95,7 +117,7 @@ const WalletDetails = () => {
   };
 
   const getWalletIcon = () => {
-    switch (wallet?.type?.toLowerCase()) {
+    switch (wallet?.wallet_type?.toLowerCase()) {
       case 'kraken':
         return '🐙';
       case 'binance':
@@ -120,11 +142,11 @@ const WalletDetails = () => {
       return { status: 'inactive', label: 'Inactive', color: 'var(--text-muted)' };
     }
     
-    if (!wallet.last_sync) {
+    if (wallet.sync_status === 'NOT_SYNCHRONIZED') {
       return { status: 'unsynced', label: 'Not Synced', color: 'var(--warning)' };
     }
     
-    const lastSync = new Date(wallet.last_sync);
+    const lastSync = new Date(wallet.updated_datetime);
     const now = new Date();
     const diffHours = (now - lastSync) / (1000 * 60 * 60);
     
@@ -196,7 +218,7 @@ const WalletDetails = () => {
               <div className="wallet-details">
                 <h1 className="wallet-name">{wallet.name}</h1>
                 <div className="wallet-meta">
-                  <span className="wallet-type">{wallet.type}</span>
+                  <span className="wallet-type">{wallet.wallet_type}</span>
                   <span className="wallet-separator">•</span>
                   <span 
                     className="wallet-status"

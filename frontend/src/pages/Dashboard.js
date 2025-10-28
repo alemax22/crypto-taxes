@@ -22,18 +22,24 @@ const Dashboard = () => {
     
     try {
       // Fetch portfolio data and wallets in parallel
-      const [portfolioResponse, walletsResponse] = await Promise.all([
-        axios.get('/api/portfolio/summary'),
-        axios.get('/api/wallets')
+      const [portfoliosResponse, walletsResponse] = await Promise.all([
+        axios.get('/portfolios'),
+        axios.get('/portfolios')
       ]);
 
-      if (portfolioResponse.data.success) {
-        setPortfolioData(portfolioResponse.data.data);
-        setTotalBalance(portfolioResponse.data.data.total_balance || 0);
+      if (portfoliosResponse.data.success && portfoliosResponse.data.data.length > 0) {
+        const portfolio = portfoliosResponse.data.data[0]; // Get first portfolio
+        setPortfolioData(portfolio);
+        setTotalBalance(0); // Will be calculated from wallet balances
       }
 
-      if (walletsResponse.data.success) {
-        setWallets(walletsResponse.data.wallets || []);
+      if (walletsResponse.data.success && walletsResponse.data.data.length > 0) {
+        const portfolio = walletsResponse.data.data[0];
+        // Get wallets for the portfolio
+        const walletsResponse2 = await axios.get(`/portfolios/${portfolio.portfolio_id}/wallets`);
+        if (walletsResponse2.data.success) {
+          setWallets(walletsResponse2.data.data || []);
+        }
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
