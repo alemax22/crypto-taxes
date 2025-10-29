@@ -34,6 +34,7 @@ DEFAULT_USER_ID = "test"  # Default user ID for portfolio operations
 
 # Global portfolio instance
 portfolio_factory = PortfolioFactory()
+portfolio_repo = PostgresPortfolioRepository()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -133,7 +134,6 @@ def ensure_user_has_portfolio(user_id: str = DEFAULT_USER_ID) -> Portfolio:
     Ensure the user has a portfolio, creating one if necessary.
     Returns the Portfolio instance.
     """
-    portfolio_repo = PostgresPortfolioRepository()
     portfolio_instance = portfolio_repo.get_user_portfolio(user_id)
     
     if not portfolio_instance:
@@ -186,7 +186,6 @@ async def list_portfolios():
 async def create_portfolio(portfolio_request: PortfolioCreateRequest):
     """Create or update the user's portfolio (enforces one portfolio per user)."""
     try:
-        portfolio_repo = PostgresPortfolioRepository()
         
         # Check if user already has a portfolio
         existing_portfolio = portfolio_repo.get_user_portfolio(DEFAULT_USER_ID)
@@ -264,7 +263,6 @@ async def delete_portfolio(portfolio_id: str):
     """Delete a portfolio by ID (enforces user ownership)."""
     try:
         # Get portfolio from repository to verify it exists and belongs to the user
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -308,7 +306,6 @@ async def list_wallets(portfolio_id: str):
     """List all wallets in the specified portfolio."""
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -373,7 +370,6 @@ async def add_wallet(portfolio_id: str, wallet_request: WalletCreateRequest):
     """Add a new wallet to the specified portfolio."""
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -442,7 +438,6 @@ async def get_wallet(portfolio_id: str, wallet_id: str):
     """
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -509,7 +504,6 @@ async def remove_wallet(portfolio_id: str, wallet_id: str):
     """Remove a wallet from the specified portfolio."""
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -558,7 +552,6 @@ async def synchronize_wallets(portfolio_id: str, start_date: Optional[str] = Non
     """Synchronize all wallets in the specified portfolio."""
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -602,7 +595,6 @@ async def get_wallet_transactions(portfolio_id: str, wallet_id: str, start_date:
     """
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:
@@ -673,7 +665,6 @@ async def get_wallet_balance(portfolio_id: str, wallet_id: str):
     """
     try:
         # Get portfolio from repository
-        portfolio_repo = PostgresPortfolioRepository()
         portfolio_instance = portfolio_repo.get_portfolio_by_id(portfolio_id)
         
         if not portfolio_instance:

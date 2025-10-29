@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from wallets.wallet import Wallet
-from wallets.wallet_enums import WalletType
+from wallets.wallet_enums import WalletSyncStatus, WalletType
 from wallets.wallet_factory import WalletFactory
 from wallets.wallet_repository import PostgresWalletRepository
 
@@ -174,7 +174,16 @@ class Portfolio:
         wallet_name = wallet_instance.name
         
         try:
+            # Check if synchronization is already in progress
+            if wallet_instance.sync_status == WalletSyncStatus.IN_PROGRESS:
+                logger.info(f"Synchronization already in progress for wallet {wallet_name}")
+                return wallet_id, {
+                    'name': wallet_name,
+                    'success': False,
+                    'error': 'Synchronization already in progress'
+                }
             logger.info(f"Synchronizing wallet: {wallet_name} in portfolio {self.portfolio_id}")
+            
             is_wallet_authenticated = wallet_instance.authenticate()
             if is_wallet_authenticated:
                 success, error = wallet_instance.synchronize(start_date)
@@ -222,6 +231,7 @@ class Portfolio:
         
         # Use ThreadPoolExecutor for parallel execution
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            
             # Submit all wallet synchronization tasks
             future_to_wallet = {
                 executor.submit(self._synchronize_single_wallet, wallet, start_date): wallet
