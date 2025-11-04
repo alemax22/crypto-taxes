@@ -68,7 +68,7 @@ class WalletSynchronizationService:
         1. Check if sync is already in progress (concurrency check)
         2. Authenticate the wallet
         3. Set status to IN_PROGRESS and persist
-        4. Execute wallet._synchronize_transactions() (domain logic)
+        4. Execute wallet._synchronize() (domain logic)
         5. Update and persist final status (COMPLETED or FAILED)
 
 
@@ -106,12 +106,12 @@ class WalletSynchronizationService:
             self._persist_wallet_state(wallet, "sync started")
 
             # Step 4: Execute domain synchronization logic
-            # Note: The wallet's _synchronize_transactions() method may update its own status,
+            # Note: The wallet's _synchronize() method may update its own status,
             # but we will ensure final state is persisted regardless
-            success, error = wallet._synchronize_transactions(start_date)
+            success, error = wallet._synchronize(start_date)
 
             # Step 5: Ensure final state is persisted
-            # The wallet entity may have already updated its status during _synchronize_transactions(),
+            # The wallet entity may have already updated its status during _synchronize(),
             # but we ensure it's persisted here
             self._persist_wallet_state(wallet, "sync completed")
             return success, error

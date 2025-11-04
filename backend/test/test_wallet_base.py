@@ -42,7 +42,7 @@ class MockWallet(Wallet):
         )
         self.ledger_file = None  # Will be set in tests
 
-    def _synchronize_transactions(self, start_date=None):
+    def _synchronize(self, start_date=None):
         """Mock implementation."""
         return True, None
 

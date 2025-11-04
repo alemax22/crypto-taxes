@@ -81,7 +81,7 @@ class Wallet(ABC):
         logger.info(f"Initialized {self.name} wallet")
 
     @abstractmethod
-    def _synchronize_transactions(
+    def _synchronize(
         self, start_date: Optional[str] = None
     ) -> tuple[bool, Optional[str]]:
         """

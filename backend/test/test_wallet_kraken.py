@@ -232,10 +232,11 @@ class TestKrakenWallet(unittest.TestCase):
         }
 
         # Test synchronization
-        result = self.wallet._synchronize_transactions(start_date="2022-01-01")
+        success, error = self.wallet._synchronize(start_date="2022-01-01")
 
         # Verify results
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error)
         self.assertIsNotNone(self.wallet.updated_datetime)
         self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
 
@@ -316,7 +317,7 @@ class TestKrakenWallet(unittest.TestCase):
         mock_get_ledger.side_effect = mock_get_ledger_side_effect
 
         # Test synchronization
-        success, error = self.wallet._synchronize_transactions(start_date="2022-01-01")
+        success, error = self.wallet._synchronize(start_date="2022-01-01")
 
         # Verify basic results
         self.assertTrue(success)

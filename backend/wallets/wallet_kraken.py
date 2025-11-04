@@ -129,7 +129,7 @@ class KrakenWallet(Wallet):
             logger.error(f"Kraken authentication error: {str(e)}")
             return self.is_active
 
-    def _synchronize_transactions(
+    def _synchronize(
         self, start_date: Optional[str] = None
     ) -> tuple[bool, Optional[str]]:
         """
@@ -189,7 +189,7 @@ class KrakenWallet(Wallet):
             logger.info(f"Starting Kraken synchronization from {start_date}")
 
             # Fetch transaction data
-            new_transactions_count = self._synchronize_transactions(start_date)
+            new_transactions_count = self._synchronize_transactions_internal(start_date)
             if new_transactions_count == -1:
                 self.sync_status = "failed"
                 return False, "Error synchronizing transactions"
@@ -217,7 +217,7 @@ class KrakenWallet(Wallet):
         for dir_path in dirs:
             os.makedirs(dir_path, exist_ok=True)
 
-    def _synchronize_transactions(self, start_date: str) -> int:
+    def _synchronize_transactions_internal(self, start_date: str) -> int:
         """
         Synchronize transaction data with local storage.
 
@@ -950,5 +950,5 @@ if __name__ == "__main__":  # pragma: no cover
         api_secret = file.readline().strip()
     wallet = KrakenWallet(reference_fiat="EUR", api_key=api_key, api_secret=api_secret)
     wallet.authenticate()
-    wallet._synchronize_transactions(start_date="2020-01-01")
+    wallet._synchronize(start_date="2020-01-01")
     result_df = wallet.get_balance()
