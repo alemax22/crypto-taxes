@@ -23,7 +23,11 @@ import requests
 # Add parent directory to path to import config module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import RESAMPLING_INTERVAL_IN_SECONDS, WALLETS_DIR
+from config import (
+    OHLCV_INITIAL_LOAD_START_DATE,
+    RESAMPLING_INTERVAL_IN_SECONDS,
+    WALLETS_DIR,
+)
 from wallets.wallet import Wallet
 from wallets.wallet_enums import WalletSyncStatus
 
@@ -206,16 +210,7 @@ class KrakenWallet(Wallet):
 
     def _ensure_data_directories(self) -> None:
         """Ensure all necessary data directories exist."""
-        # Get all unique directory paths from the file paths defined in __init__
-        dirs = set()
-
-        # Extract directories from ledger_file and ohlc_file
-        dirs.add(os.path.dirname(self.ledger_file))
-        dirs.add(os.path.dirname(self.ohlc_file))
-
-        # Create all directories
-        for dir_path in dirs:
-            os.makedirs(dir_path, exist_ok=True)
+        os.makedirs(os.path.dirname(self.ledger_file), exist_ok=True)
 
     def _synchronize_transactions_internal(self, start_date: str) -> int:
         """
@@ -688,254 +683,45 @@ class KrakenWallet(Wallet):
 
         return ledger_df
 
-    def _get_ohlc_data_from_kraken(
-        self, pair: str, altname: str, interval: int = 1440, since: Optional[int] = None
-    ) -> pd.DataFrame:
-        """Get OHLC data for a single pair."""
-        if since is not None:
-            resp_ohlc_data = self._kraken_public_request(
-                "/0/public/OHLC?pair="
-                + pair
-                + "&interval="
-                + str(interval)
-                + "&since="
-                + str(since)
-            )
-        else:
-            resp_ohlc_data = self._kraken_public_request(
-                "/0/public/OHLC?pair=" + pair + "&interval=" + str(interval)
-            )
-
-        resp_ohlc_data_json = resp_ohlc_data.json()
-        resp_ohlc_data_df = pd.DataFrame([])
-
-        if len(resp_ohlc_data_json["error"]) == 0:
-            resp_ohlc_data_df = pd.DataFrame(
-                resp_ohlc_data_json["result"][altname],
-                columns=[
-                    "timestamp",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "vwap",
-                    "volume",
-                    "count",
-                ],
-            )
-            resp_ohlc_data_df = resp_ohlc_data_df.set_index("timestamp")
-
-            # Get the 'last' field from the API response
-            last_valid_timestamp = resp_ohlc_data_json["result"]["last"]
-
-            # Discard all samples after the last valid timestamp
-            if not resp_ohlc_data_df.empty:
-                resp_ohlc_data_df = resp_ohlc_data_df[
-                    resp_ohlc_data_df.index <= last_valid_timestamp
-                ]
-                logger.info(
-                    f"Discarded samples after timestamp {last_valid_timestamp} (kept {len(resp_ohlc_data_df)} valid samples)"
-                )
-        else:
-            logger.error(resp_ohlc_data_json["error"])
-
-        return resp_ohlc_data_df
-
-    def _create_tradable_asset_matrix(self) -> pd.DataFrame:
-        """Create tradable asset matrix."""
-        trad_response_json = self._get_tradable_assets_info()
-
-        # Create DataFrame from API response
-        tradable_asset_df = pd.DataFrame(trad_response_json["result"]).transpose()
-
-        # Select and rename columns for clarity
-        tradable_asset_df = tradable_asset_df[
-            ["base", "quote", "altname", "wsname"]
-        ].copy()
-
-        # Normalize asset names using existing method
-        tradable_asset_df["base"] = tradable_asset_df["base"].apply(
-            self._normalize_asset_name
-        )
-        tradable_asset_df["quote"] = tradable_asset_df["quote"].apply(
-            self._normalize_asset_name
-        )
-
-        # Set index for easy lookup
-        tradable_asset_df = tradable_asset_df.reset_index(drop=False, names="index")
-        tradable_asset_df = tradable_asset_df.set_index(["base", "quote"])
-
-        # Add custom mappings for special cases
-        custom_mappings = self._get_custom_asset_mappings()
-        if not custom_mappings.empty:
-            tradable_asset_df = pd.concat([tradable_asset_df, custom_mappings])
-
-        return tradable_asset_df
-
-    def _get_custom_asset_mappings(self) -> pd.DataFrame:
-        # TODO: find a common patter to handle the token migrations:
-        # - MATIC TO POL 1:1 from ...
-        # - EOS TO A 1:1 from ...
-        """Get custom asset mappings for special cases."""
-        custom_mappings = []
-
-        # Add MATIC/POL mapping
-        custom_mappings.append(
-            {"index": "POLEUR", "altname": "POLEUR", "wsname": "POL/EUR"}
-        )
-
-        custom_index = pd.MultiIndex.from_tuples(
-            [("MATIC", "EUR")], names=["base", "quote"]
-        )
-        custom_mappings = pd.DataFrame(custom_mappings, index=custom_index)
-
-        return custom_mappings
-
     def _get_ohlc_data(
         self, assets_in_portfolio: List[str], start_date: Optional[str] = None
     ) -> pd.DataFrame:
-        """Get OHLC data with persistence to parquet file."""
-        filename = self.ohlc_file
-        tradable_asset_df = self._create_tradable_asset_matrix()
-        reference_asset = self.reference_fiat
-        exception_assets = EXCEPTION_ASSETS
+        """
+        Return OHLC price data from PostgreSQL for the given assets.
+        Triggers a progressive Kraken fetch for any asset whose data is stale or absent.
+        On first call for an asset this performs a full historical backfill from 2020.
+        """
+        from wallets.ohlcv_service import OHLCVService
 
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        assets_to_load = [
+            a for a in assets_in_portfolio
+            if a not in EXCEPTION_ASSETS and a != self.reference_fiat
+        ]
 
-        # Load existing data
-        existing_ohlc_df = pd.DataFrame()
-        try:
-            existing_ohlc_df = pd.read_parquet(filename, engine="fastparquet")
-            existing_ohlc_df["price"] = existing_ohlc_df["price"].apply(
-                self._decimal_from_value
-            )
-            logger.info(
-                f"Loaded existing OHLC data: {existing_ohlc_df.shape[0]} records"
-            )
-        except FileNotFoundError:
-            logger.info("No existing OHLC data found")
+        if not assets_to_load:
+            empty = pd.DataFrame(columns=["price", "timestamp"])
+            empty.index = pd.MultiIndex.from_tuples([], names=["date", "asset"])
+            return empty
 
-        # Collect new OHLC data
-        new_ohlc_data = []
+        service = OHLCVService()
+        service.load(assets_to_load, self.reference_fiat)
 
-        # Log available trading pairs for debugging
-        logger.debug(f"Assets in portfolio: {assets_in_portfolio}")
+        start_ts = int(
+            OHLCV_INITIAL_LOAD_START_DATE.replace(tzinfo=timezone.utc).timestamp()
+        )
+        end_ts = int(datetime.now(timezone.utc).timestamp())
 
-        # TODO: how to handle multi fiat portfolio?
-        for asset in assets_in_portfolio:
-            if (asset not in exception_assets) and (asset != reference_asset):
-                try:
-                    # Check if the trading pair exists
-                    if (asset, reference_asset) not in tradable_asset_df.index:
-                        logger.warning(
-                            f"No trading pair found for {asset}/{reference_asset}. Skipping OHLC data fetch."
-                        )
-                        continue
+        price_df = service.get_price_dataframe(
+            assets_to_load, self.reference_fiat, start_ts, end_ts
+        )
 
-                    pair_data = tradable_asset_df.loc[asset, reference_asset]
-                    pair_altname = pair_data["altname"]
-                    # Use altname as the index for OHLC data retrieval
-                    pair_index = pair_data["index"]
+        if price_df.empty:
+            empty = pd.DataFrame(columns=["price", "timestamp"])
+            empty.index = pd.MultiIndex.from_tuples([], names=["date", "asset"])
+            return empty
 
-                    # Get the latest timestamp for this asset from existing data
-                    latest_timestamp = None
-                    if not existing_ohlc_df.empty:
-                        asset_data = (
-                            existing_ohlc_df.xs(asset, level="asset", drop_level=False)
-                            if asset in existing_ohlc_df.index.get_level_values("asset")
-                            else pd.DataFrame()
-                        )
-                        if not asset_data.empty and "timestamp" in asset_data.columns:
-                            latest_timestamp = asset_data["timestamp"].max()
-                            logger.info(
-                                f"Latest timestamp for {asset}: {latest_timestamp} ({datetime.fromtimestamp(latest_timestamp)})"
-                            )
-
-                    # Check if we need to fetch new data (avoid calls for very recent timestamps)
-                    current_time = datetime.now().timestamp()
-                    min_interval_seconds = RESAMPLING_INTERVAL_IN_SECONDS * 2
-
-                    if (
-                        latest_timestamp is not None
-                        and (current_time - latest_timestamp) < min_interval_seconds
-                    ):
-                        logger.info(
-                            f"Skipping {asset} - latest data is too recent (less than {min_interval_seconds} seconds ago)"
-                        )
-                        continue
-
-                    logger.info(f"Fetching data for {asset} ({pair_altname})")
-
-                    # Get OHLC data with daily interval (1440 minutes) and latest timestamp
-                    ohlc_df = self._get_ohlc_data_from_kraken(
-                        pair_altname, pair_index, interval=1440, since=latest_timestamp
-                    )
-
-                    logger.info(f"Fetched {ohlc_df.shape[0]} rows")
-
-                    # TODO copy implementation from arbitrage scripts to get and align OHLC data, then from this function always retrieve the local copy of the data
-                    if not ohlc_df.empty:
-                        # Reset index to get timestamp as column
-                        ohlc_df = ohlc_df.reset_index()
-                        ohlc_df["datetime"] = pd.to_datetime(
-                            ohlc_df["timestamp"], unit="s"
-                        ).dt.normalize()
-
-                        # Convert close price to Decimal and create records
-                        for _, row in ohlc_df.iterrows():
-                            price = self._decimal_from_value(row["close"])
-                            new_ohlc_data.append(
-                                {
-                                    "date": row["datetime"],
-                                    "crypto": asset,
-                                    "price": price,
-                                    "timestamp": row["timestamp"],
-                                }
-                            )
-
-                    # Sleep to avoid rate limiting
-                    time.sleep(1)
-
-                except Exception as e:
-                    logger.error(f"Error fetching data for {asset}: {e}")
-                    continue
-
-        # Create new DataFrame
-        if new_ohlc_data:
-            new_ohlc_df = pd.DataFrame(new_ohlc_data)
-            new_ohlc_df = new_ohlc_df.rename(columns={"crypto": "asset"})
-            new_ohlc_df = new_ohlc_df.set_index(["date", "asset"])
-            logger.info(f"Fetched {len(new_ohlc_data)} new OHLC records")
-        else:
-            new_ohlc_df = pd.DataFrame()
-            logger.info("No new OHLC data fetched")
-
-        # Merge with existing data
-        if not existing_ohlc_df.empty and not new_ohlc_df.empty:
-            # Combine existing and new data
-            combined_df = pd.concat([existing_ohlc_df, new_ohlc_df])
-            # Remove duplicates (keep the newest instance)
-            combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
-            logger.info(
-                f"Combined data: {combined_df.shape[0]} records and deleted {existing_ohlc_df.shape[0] + new_ohlc_df.shape[0] - combined_df.shape[0]} duplicates"
-            )
-        elif not existing_ohlc_df.empty:
-            combined_df = existing_ohlc_df
-        elif not new_ohlc_df.empty:
-            combined_df = new_ohlc_df
-        else:
-            # Create empty DataFrame with proper structure
-            combined_df = pd.DataFrame(columns=["price", "timestamp"])
-            combined_df.index = pd.MultiIndex.from_tuples([], names=["date", "asset"])
-
-        # Save to parquet file (with timestamp included)
-        if not combined_df.empty:
-            combined_df.to_parquet(filename, engine="fastparquet", compression="GZIP")
-            logger.info(f"Saved OHLC data to {filename}")
-
-        logger.info(f"Combined data: {combined_df.shape[0]} records")
-        return combined_df
+        price_df["date"] = pd.to_datetime(price_df["timestamp"], unit="s").dt.normalize()
+        return price_df.set_index(["date", "asset"])[["price", "timestamp"]]
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -241,11 +241,10 @@ class TestKrakenWallet(unittest.TestCase):
         self.assertEqual(self.wallet.sync_status, WalletSyncStatus.COMPLETED)
 
     @patch.object(time, "sleep")
-    @patch.object(KrakenWallet, "_get_tradable_assets_info")
     @patch.object(KrakenWallet, "_get_ohlc_data")
     @patch.object(KrakenWallet, "_get_ledger")
     def test_synchronize_full_ledger_success(
-        self, mock_get_ledger, mock_ohlc_data, mock_get_tradable_assets_info, mock_sleep
+        self, mock_get_ledger, mock_ohlc_data, mock_sleep
     ):
         """Test successful synchronization with multiple ledger calls and asset mapping verification."""
 
@@ -266,11 +265,6 @@ class TestKrakenWallet(unittest.TestCase):
 
         # Reset mock to clear authentication call
         mock_get_ledger.reset_mock()
-
-        # Mock asset matrix to return test data
-        mock_get_tradable_assets_info.return_value = (
-            self._simulate_tradable_assets_info()
-        )
 
         # Mock OHLC data to return test data to avoid complex price calculations
         mock_ohlc_data.return_value = self._simulate_ohlc_data(start_timestamp, 170)

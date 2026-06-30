@@ -3,9 +3,19 @@ Configuration file for Italian Crypto Tax Calculator 2025
 Contains tax rates, thresholds, and other settings.
 """
 import os
+from datetime import datetime
 
 # RESAMPLING INTERVAL
-RESAMPLING_INTERVAL_IN_SECONDS = 60*60*24 # 1 day in seconds
+RESAMPLING_INTERVAL_IN_SECONDS = 60*60*24  # 1 day in seconds
+
+# OHLCV settings
+OHLCV_INTERVAL_MINUTES = 1440  # daily candles
+OHLCV_INITIAL_LOAD_START_DATE = datetime(2020, 1, 1)
+OHLCV_DEFAULT_ASSETS = [
+    "BTC", "ETH", "XRP", "LTC", "ADA", "DOT", "LINK", "UNI",
+    "SOL", "MATIC", "ATOM", "XLM", "ALGO", "VET", "AAVE",
+    "TRX", "XTZ", "EOS", "KSM", "1INCH",
+]
 
 # REQUIRED COLUMNS FOR TRANSACTIONS
 TRANSACTION_REQUIRED_COLUMNS = [

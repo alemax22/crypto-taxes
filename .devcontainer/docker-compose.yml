@@ -1,11 +1,15 @@
 services:
-  backend:
+  # Dev container - for development tools and editing code
+  dev:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
-    container_name: crypto-taxes-backend-dev
+    container_name: crypto-taxes-dev
     volumes:
+      # Mount entire workspace to dev container
+      # Backend and frontend folders are automatically included and shared
       - ..:/workspace:cached
+      # Persistent data volume
       - crypto_data_dev:/app/persistent_data
     environment:
       - FLASK_APP=app.py
@@ -14,8 +18,11 @@ services:
       - FLASK_RUN_PORT=5000
       - DATABASE_URL=postgresql+psycopg2://cryptotaxes:cryptotaxes@postgres:5432/cryptotaxes
       - PYTHONPATH=/workspace/backend
+      - REACT_APP_API_URL=http://backend:5000
     ports:
       - "5000:5000"
+      - "3000:3000"
+      - "5432:5432"
     networks:
       - crypto-network
     depends_on:
@@ -24,12 +31,44 @@ services:
     stdin_open: true
     tty: true
 
+  # Backend container - uses production Dockerfile
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: crypto-taxes-backend
+    volumes:
+      # Mount backend folder (shared with dev container)
+      - ../backend:/app:cached
+      - crypto_data:/app/persistent_data
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5000
+      - DATABASE_URL=postgresql+psycopg2://cryptotaxes:cryptotaxes@postgres:5432/cryptotaxes
+    ports:
+      - "5000:5000"
+    networks:
+      - crypto-network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend container - uses production Dockerfile
   frontend:
     build:
       context: ../frontend
       dockerfile: Dockerfile
-    container_name: crypto-taxes-frontend-dev
+    container_name: crypto-taxes-frontend
     volumes:
+      # Mount frontend folder (shared with dev container)
       - ../frontend:/app:cached
       - /app/node_modules
     environment:
@@ -42,13 +81,18 @@ services:
       - crypto-network
     depends_on:
       - backend
-    command: sleep infinity
-    stdin_open: true
-    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # Database container - same as production
   postgres:
     image: postgres:16-alpine
-    container_name: crypto-taxes-postgres-dev
+    container_name: crypto-taxes-postgres
     environment:
       - POSTGRES_DB=cryptotaxes
       - POSTGRES_USER=cryptotaxes
@@ -63,6 +107,8 @@ services:
 
 volumes:
   crypto_data_dev:
+    driver: local
+  crypto_data:
     driver: local
   postgres_data_dev:
     driver: local

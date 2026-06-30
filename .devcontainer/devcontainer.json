@@ -1,7 +1,7 @@
 {
   "name": "Crypto Taxes Dev Container",
   "dockerComposeFile": "docker-compose.yml",
-  "service": "backend",
+  "service": "dev",
   "workspaceFolder": "/workspace",
   
   // Features to add to the dev container

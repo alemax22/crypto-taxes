@@ -20,6 +20,9 @@ from wallets.portfolio import Portfolio
 from wallets.portfolio_factory import PortfolioFactory
 from wallets.portfolio_repository import PostgresPortfolioRepository
 from wallets.wallet_enums import WalletType, WalletSyncStatus
+from wallets.ohlcv_repository import OHLCVDataORM  # registers ohlcv_data table with Base
+from wallets.ohlcv_service import OHLCVService
+from config import OHLCV_DEFAULT_ASSETS, OHLCV_INTERVAL_MINUTES
 from db import init_db, engine
 
 # Configure logging
@@ -724,6 +727,58 @@ async def get_wallet_balance(portfolio_id: str, wallet_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get wallet balance: {str(e)}"
         )
+
+class OHLCVLoadRequest(BaseModel):
+    assets: Optional[List[str]] = Field(
+        None,
+        description="Assets to load; defaults to the configured OHLCV_DEFAULT_ASSETS list",
+    )
+    reference_fiat: str = Field(default="EUR", description="Reference fiat currency")
+
+
+@app.post("/ohlcv/load", response_model=ApiResponse)
+async def load_ohlcv(request: OHLCVLoadRequest):
+    """
+    Load OHLCV candlestick data from Kraken for the given assets.
+    On first call per asset this performs a full historical backfill starting from 2020.
+    Subsequent calls only fetch new candles (progressive update).
+    """
+    try:
+        assets = request.assets or OHLCV_DEFAULT_ASSETS
+        service = OHLCVService()
+        results = service.load(assets, request.reference_fiat)
+        return ApiResponse(
+            success=True,
+            message=f"OHLCV load completed for {len(assets)} assets",
+            data=results,
+        )
+    except Exception as e:
+        logger.error(f"Error loading OHLCV data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load OHLCV data: {str(e)}",
+        )
+
+
+@app.get("/ohlcv/assets", response_model=ApiResponse)
+async def list_ohlcv_assets(reference_fiat: str = "EUR"):
+    """List all assets that have OHLCV data stored in the database."""
+    try:
+        from wallets.ohlcv_repository import PostgresOHLCVRepository
+        repo = PostgresOHLCVRepository()
+        assets = repo.get_all_assets(reference_fiat, OHLCV_INTERVAL_MINUTES)
+        return ApiResponse(
+            success=True,
+            message=f"Found {len(assets)} assets with OHLCV data for {reference_fiat}",
+            data={"reference_fiat": reference_fiat, "assets": assets},
+        )
+    except Exception as e:
+        logger.error(f"Error listing OHLCV assets: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list OHLCV assets: {str(e)}",
+        )
+
 
 if __name__ == "__main__":
     import uvicorn

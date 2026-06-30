@@ -13,3 +13,5 @@ uvicorn[standard]
 pydantic
 SQLAlchemy>=2.0
 psycopg2-binary>=2.9
+pytest>=8.0
+pytest-cov>=5.0
